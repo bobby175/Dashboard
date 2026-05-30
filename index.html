@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Catat Keuangan — Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <!-- ============ SETUP / CONNECT SCREEN ============ -->
+    <div id="setup" class="setup-wrap">
+        <div class="setup-card">
+            <div class="brand">
+                <div class="brand-logo">Rp</div>
+                <div>
+                    <h1>Catat Keuangan</h1>
+                    <p>Dashboard Web</p>
+                </div>
+            </div>
+            <p class="setup-desc">
+                Hubungkan dashboard ke backend yang sama dengan aplikasi HP kamu.
+                Pakai file konfigurasi yang diekspor dari aplikasi (Pengaturan → Backup & Pindah → Bagikan),
+                atau isi manual.
+            </p>
+
+            <div class="tabs">
+                <button class="tab active" data-tab="file">Impor File JSON</button>
+                <button class="tab" data-tab="paste">Tempel JSON</button>
+                <button class="tab" data-tab="manual">Manual</button>
+            </div>
+
+            <div class="tab-body" id="tab-file">
+                <label class="dropzone" id="dropzone">
+                    <input type="file" id="fileInput" accept="application/json,.json,text/plain" hidden />
+                    <div class="dz-icon">📂</div>
+                    <div class="dz-text">Klik untuk pilih file <b>catat-keuangan-config-*.json</b></div>
+                    <div class="dz-sub">atau seret &amp; lepas file ke sini</div>
+                </label>
+            </div>
+
+            <div class="tab-body hidden" id="tab-paste">
+                <textarea id="pasteArea" rows="6" placeholder='{ "webhookUrl": "https://script.google.com/macros/s/.../exec", "webhookSecret": "..." }'></textarea>
+                <button class="btn primary full" id="pasteBtn">Hubungkan</button>
+            </div>
+
+            <div class="tab-body hidden" id="tab-manual">
+                <label class="field-label">URL Web App Apps Script</label>
+                <input type="text" id="manualUrl" placeholder="https://script.google.com/macros/s/.../exec" />
+                <label class="field-label">Webhook Secret</label>
+                <input type="password" id="manualSecret" placeholder="secret kamu" />
+                <button class="btn primary full" id="manualBtn">Hubungkan</button>
+            </div>
+
+            <div id="setupMsg" class="setup-msg"></div>
+        </div>
+        <div class="setup-foot">Data hanya tersimpan di browser ini (localStorage). Tidak dikirim ke pihak ketiga.</div>
+    </div>
+
+    <!-- ============ DASHBOARD ============ -->
+    <div id="app" class="app hidden">
+        <header class="topbar">
+            <div class="brand sm">
+                <div class="brand-logo sm">Rp</div>
+                <div>
+                    <strong>Catat Keuangan</strong>
+                    <span id="todayLabel" class="muted"></span>
+                </div>
+            </div>
+            <div class="topbar-actions">
+                <span id="status" class="status"></span>
+                <button class="icon-btn" id="hideBtn" title="Sembunyikan saldo">👁</button>
+                <button class="icon-btn" id="refreshBtn" title="Muat ulang">⟳</button>
+                <button class="icon-btn" id="disconnectBtn" title="Putuskan koneksi">⎋</button>
+            </div>
+        </header>
+
+        <main class="content">
+            <!-- KPI -->
+            <section class="kpi-grid">
+                <div class="kpi card accent-indigo">
+                    <div class="kpi-label">Saldo Total</div>
+                    <div class="kpi-value" id="kpiBalance">—</div>
+                </div>
+                <div class="kpi card accent-green">
+                    <div class="kpi-label">Pemasukan (bulan ini)</div>
+                    <div class="kpi-value" id="kpiIncome">—</div>
+                </div>
+                <div class="kpi card accent-red">
+                    <div class="kpi-label">Pengeluaran (bulan ini)</div>
+                    <div class="kpi-value" id="kpiExpense">—</div>
+                </div>
+                <div class="kpi card accent-violet">
+                    <div class="kpi-label">Transaksi (bulan ini)</div>
+                    <div class="kpi-value" id="kpiCount">—</div>
+                </div>
+            </section>
+
+            <!-- Accounts -->
+            <section class="card">
+                <div class="card-head"><h2>Saldo per Akun</h2></div>
+                <div class="accounts" id="accounts"></div>
+            </section>
+
+            <div class="two-col">
+                <!-- Cash flow chart -->
+                <section class="card">
+                    <div class="card-head">
+                        <h2>Arus Kas</h2>
+                        <div class="seg" id="granSeg">
+                            <button class="seg-btn active" data-gran="harian">Harian</button>
+                            <button class="seg-btn" data-gran="mingguan">Mingguan</button>
+                            <button class="seg-btn" data-gran="bulanan">Bulanan</button>
+                        </div>
+                    </div>
+                    <div class="month-nav">
+                        <button class="icon-btn" id="prevMonth">‹</button>
+                        <span id="monthLabel"></span>
+                        <button class="icon-btn" id="nextMonth">›</button>
+                    </div>
+                    <canvas id="cashflowChart" height="120"></canvas>
+                </section>
+
+                <!-- Category breakdown -->
+                <section class="card">
+                    <div class="card-head"><h2>Pengeluaran per Kategori</h2></div>
+                    <canvas id="categoryChart" height="160"></canvas>
+                </section>
+            </div>
+
+            <div class="two-col">
+                <!-- Budgets -->
+                <section class="card">
+                    <div class="card-head"><h2>Budget Bulanan</h2></div>
+                    <div id="budgets" class="prog-list"></div>
+                </section>
+
+                <!-- Goals -->
+                <section class="card">
+                    <div class="card-head"><h2>Goal Tabungan</h2></div>
+                    <div id="goals" class="prog-list"></div>
+                </section>
+            </div>
+
+            <!-- Recurring -->
+            <section class="card">
+                <div class="card-head"><h2>Transaksi Berulang Aktif</h2></div>
+                <div id="recurring" class="recurring-list"></div>
+            </section>
+
+            <!-- Transactions -->
+            <section class="card">
+                <div class="card-head">
+                    <h2>Riwayat Transaksi</h2>
+                    <input type="text" id="searchInput" class="search" placeholder="Cari merchant / kategori..." />
+                </div>
+                <div class="filters" id="filters"></div>
+                <div class="table-wrap">
+                    <table class="tx-table">
+                        <thead>
+                            <tr>
+                                <th>Tanggal</th><th>Tipe</th><th>Kategori</th>
+                                <th>Akun</th><th>Merchant</th><th class="right">Jumlah</th>
+                            </tr>
+                        </thead>
+                        <tbody id="txBody"></tbody>
+                    </table>
+                </div>
+                <div id="txEmpty" class="empty hidden">Tidak ada transaksi.</div>
+            </section>
+
+            <footer class="foot">
+                Dashboard Catat Keuangan • data sinkron dengan aplikasi via Apps Script
+            </footer>
+        </main>
+
+        <div id="loader" class="loader hidden"><div class="spinner"></div></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
