@@ -5,6 +5,7 @@
 
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
+const LS_ACCOUNT_ORDER = "ck_dashboard_account_order";
 
 const state = {
   url: "",
@@ -19,6 +20,7 @@ const state = {
   filterAkun: null,
   search: "",
   hide: localStorage.getItem(LS_HIDE) === "1",
+  editAccounts: false,
 };
 
 let cashflowChart = null;
@@ -45,6 +47,10 @@ function ymOf(iso) {
 function fmtRp(n) {
   if (state.hide) return "Rp ••••••";
   const neg = n < 0 ? "-" : "";
+  return fmtRpRaw(n);
+}
+function fmtRpRaw(n) {
+  const neg = n < 0 ? "-" : "";
   return "Rp " + neg + Math.abs(Math.round(n)).toLocaleString("id-ID");
 }
 function shortRp(n) {
@@ -59,6 +65,48 @@ function isIncome(t) { return (t.tipe || "").toLowerCase() === "pemasukan"; }
 function isExpense(t) { return (t.tipe || "").toLowerCase() === "pengeluaran"; }
 
 const PALETTE = ["#6366f1", "#f43f5e", "#f59e0b", "#10b981", "#06b6d4", "#8b5cf6", "#ec4899", "#84cc16", "#64748b"];
+const DEFAULT_ACCOUNT_ORDER = [
+  "Tunai", "DANA", "GoPay", "OVO", "ShopeePay",
+  "BCA", "Mandiri", "BRI", "BNI", "Kartu Kredit", "Lainnya"
+];
+const ACCOUNT_STYLES = {
+  Tunai: { badge: "Rp", from: "#16a34a", to: "#15803d" },
+  DANA: { badge: "DW", from: "#3b82f6", to: "#1d4ed8" },
+  GoPay: { badge: "GP", from: "#06b6d4", to: "#0e7490" },
+  OVO: { badge: "OV", from: "#8b5cf6", to: "#6d28d9" },
+  ShopeePay: { badge: "SP", from: "#f97316", to: "#c2410c" },
+  BCA: { badge: "BC", from: "#2563eb", to: "#1e40af" },
+  Mandiri: { badge: "MD", from: "#14b8a6", to: "#0f766e" },
+  BRI: { badge: "BR", from: "#1e40af", to: "#1e3a8a" },
+  BNI: { badge: "BN", from: "#f59e0b", to: "#b45309" },
+  "Kartu Kredit": { badge: "CC", from: "#f43f5e", to: "#be123c" },
+  Lainnya: { badge: "LA", from: "#64748b", to: "#334155" },
+};
+
+function accountStyle(name) { return ACCOUNT_STYLES[name] || ACCOUNT_STYLES.Lainnya; }
+function savedAccountOrder() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_ACCOUNT_ORDER) || "[]");
+    return Array.isArray(raw) ? raw.filter(Boolean) : [];
+  } catch (e) {
+    return [];
+  }
+}
+function normalizedAccountOrder(extraNames = []) {
+  return [...new Set([...savedAccountOrder(), ...DEFAULT_ACCOUNT_ORDER, ...extraNames])];
+}
+function saveAccountOrder(order) {
+  localStorage.setItem(LS_ACCOUNT_ORDER, JSON.stringify(normalizedAccountOrder(order)));
+}
+function sortAccounts(names) {
+  const order = normalizedAccountOrder(names);
+  const index = new Map(order.map((name, i) => [name.toLowerCase(), i]));
+  return names.slice().sort((a, b) => {
+    const ia = index.has(a.toLowerCase()) ? index.get(a.toLowerCase()) : Number.MAX_SAFE_INTEGER;
+    const ib = index.has(b.toLowerCase()) ? index.get(b.toLowerCase()) : Number.MAX_SAFE_INTEGER;
+    return ia - ib || a.localeCompare(b, "id-ID");
+  });
+}
 
 // ---------------- Network ----------------
 async function callApi(action, extra = {}) {
@@ -86,13 +134,11 @@ async function loadAll() {
   showLoader(true);
   setStatus("Memuat...");
   try {
-    // Transaksi wajib; budget/goal/recurring opsional (bila backend versi lama)
-    const tx = await callApi("list");
-    state.transactions = (tx.transactions || []).filter((t) => t.id);
-
-    state.budgets = await safe(() => callApi("budgetList").then((r) => r.budgets || []), []);
-    state.goals = await safe(() => callApi("goalList").then((r) => r.goals || []), []);
-    state.recurring = await safe(() => callApi("recurringList").then((r) => r.recurring || []), []);
+    const data = await loadDashboardData();
+    state.transactions = (data.transactions || []).filter((t) => t.id);
+    state.budgets = data.budgets || [];
+    state.goals = data.goals || [];
+    state.recurring = data.recurring || [];
 
     render();
     setStatus("Tersinkron • " + new Date().toLocaleTimeString("id-ID"));
@@ -102,6 +148,24 @@ async function loadAll() {
   } finally {
     showLoader(false);
   }
+}
+
+async function loadDashboardData() {
+  const combined = await safe(() => callApi("dashboardData"), null);
+  if (combined) return combined;
+
+  const [tx, budgets, goals, recurring] = await Promise.all([
+    callApi("list"),
+    safe(() => callApi("budgetList").then((r) => r.budgets || []), []),
+    safe(() => callApi("goalList").then((r) => r.goals || []), []),
+    safe(() => callApi("recurringList").then((r) => r.recurring || []), []),
+  ]);
+  return {
+    transactions: tx.transactions || [],
+    budgets,
+    goals,
+    recurring,
+  };
 }
 
 async function safe(fn, fallback) {
@@ -154,13 +218,57 @@ function renderKpi() {
 function renderAccounts() {
   const map = accountBalances();
   const el = document.getElementById("accounts");
-  const entries = Object.entries(map).filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
+  const editBtn = document.getElementById("editAccountsBtn");
+  const names = sortAccounts(Object.keys(map).filter((name) => map[name] !== 0));
+  const entries = names.map((name) => [name, map[name]]);
+  if (editBtn) {
+    editBtn.textContent = state.editAccounts ? "Selesai" : "Edit";
+    editBtn.classList.toggle("active", state.editAccounts);
+  }
   if (entries.length === 0) { el.innerHTML = '<div class="muted">Belum ada akun.</div>'; return; }
   el.innerHTML = entries.map(([name, val]) => `
-    <div class="acct">
-      <div class="name">${esc(name)}</div>
+    <div class="acct ${state.editAccounts ? "editing" : ""}"
+      style="--from:${accountStyle(name).from};--to:${accountStyle(name).to}"
+      draggable="${state.editAccounts ? "true" : "false"}"
+      data-account="${esc(name)}">
+      <div class="acct-top">
+        <div class="acct-badge">${esc(accountStyle(name).badge)}</div>
+        <div class="name">${esc(name)}</div>
+        ${state.editAccounts ? '<div class="drag-mark">=</div>' : ""}
+      </div>
+      <div class="acct-sub">Saldo</div>
       <div class="val">${fmtRp(val)}</div>
     </div>`).join("");
+  if (state.editAccounts) setupAccountDrag();
+}
+
+function setupAccountDrag() {
+  let dragged = null;
+  document.querySelectorAll(".acct").forEach((card) => {
+    card.addEventListener("dragstart", () => {
+      dragged = card.dataset.account;
+      card.classList.add("dragging");
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      dragged = null;
+    });
+    card.addEventListener("dragover", (e) => e.preventDefault());
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const target = card.dataset.account;
+      if (!dragged || dragged === target) return;
+      const current = sortAccounts(Object.keys(accountBalances()).filter((name) => accountBalances()[name] !== 0));
+      const from = current.indexOf(dragged);
+      const to = current.indexOf(target);
+      if (from < 0 || to < 0) return;
+      const [moved] = current.splice(from, 1);
+      current.splice(to, 0, moved);
+      saveAccountOrder(current);
+      renderAccounts();
+      renderFilters();
+    });
+  });
 }
 
 function buildCashflowPoints() {
@@ -315,7 +423,7 @@ function renderRecurring() {
 
 function renderFilters() {
   const el = document.getElementById("filters");
-  const akuns = [...new Set(state.transactions.map((t) => t.akun).filter(Boolean))].sort();
+  const akuns = sortAccounts([...new Set(state.transactions.map((t) => t.akun).filter(Boolean))]);
   const chips = [
     chip("Pemasukan", state.filterTipe === "Pemasukan", () => toggleTipe("Pemasukan")),
     chip("Pengeluaran", state.filterTipe === "Pengeluaran", () => toggleTipe("Pengeluaran")),
@@ -363,6 +471,247 @@ function renderTable() {
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---------------- Settlement download ----------------
+function settlementRows() {
+  return monthTx(state.month)
+    .slice()
+    .sort((a, b) => (a.tanggal + (a.jam || "")).localeCompare(b.tanggal + (b.jam || "")));
+}
+
+function settlementSummary() {
+  const rows = settlementRows();
+  const nonTransfer = rows.filter((t) => !isTransfer(t));
+  const income = nonTransfer.filter(isIncome).reduce((a, t) => a + t.jumlah, 0);
+  const expense = nonTransfer.filter(isExpense).reduce((a, t) => a + t.jumlah, 0);
+  const balances = accountBalances();
+  const categoryExpense = {};
+  const accountDelta = {};
+
+  rows.forEach((t) => {
+    const akun = t.akun || "Tunai";
+    const delta = isIncome(t) ? t.jumlah : isExpense(t) ? -t.jumlah : 0;
+    accountDelta[akun] = (accountDelta[akun] || 0) + delta;
+    if (isExpense(t) && !isTransfer(t)) {
+      const kategori = t.kategori || "Lainnya";
+      categoryExpense[kategori] = (categoryExpense[kategori] || 0) + t.jumlah;
+    }
+  });
+
+  return {
+    rows,
+    income,
+    expense,
+    net: income - expense,
+    balance: Object.values(balances).reduce((a, b) => a + b, 0),
+    accountBalances: sortAccounts(Object.keys(balances))
+      .filter((name) => balances[name] !== 0)
+      .map((name) => [name, balances[name]]),
+    accountDelta: Object.entries(accountDelta).sort((a, b) => b[1] - a[1]),
+    categoryExpense: Object.entries(categoryExpense).sort((a, b) => b[1] - a[1]),
+  };
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadSettlementCsv() {
+  const sum = settlementSummary();
+  const lines = [
+    ["Settlement Bulanan", monthLabel(state.month)],
+    ["Saldo Total", fmtRpRaw(sum.balance)],
+    ["Pemasukan", fmtRpRaw(sum.income)],
+    ["Pengeluaran", fmtRpRaw(sum.expense)],
+    ["Selisih", fmtRpRaw(sum.net)],
+    ["Total Transaksi", sum.rows.length],
+    [],
+    ["Saldo per Akun"],
+    ...sum.accountBalances.map(([name, val]) => [name, fmtRpRaw(val)]),
+    [],
+    ["Tanggal", "Jam", "Tipe", "Kategori", "Akun", "Merchant", "Deskripsi", "Jumlah"],
+    ...sum.rows.map((t) => [
+      t.tanggal || "",
+      (t.jam || "").slice(0, 5),
+      t.tipe || "",
+      t.kategori || "",
+      t.akun || "",
+      t.merchant || "",
+      t.deskripsi || "",
+      Math.round(t.jumlah || 0),
+    ]),
+  ];
+  const csv = lines.map((row) => row.map(csvCell).join(";")).join("\n");
+  downloadBlob(`settlement-${state.month}.csv`, "\ufeff" + csv, "text/csv;charset=utf-8");
+}
+
+function downloadSettlementPdf() {
+  const api = window.jspdf;
+  if (!api?.jsPDF) {
+    alert("Library PDF belum termuat. Coba refresh halaman lalu download lagi.");
+    return;
+  }
+  const doc = new api.jsPDF({ unit: "mm", format: "a4" });
+  const sum = settlementSummary();
+  const margin = 14;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let y = 44;
+
+  const drawMotif = () => {
+    doc.setFillColor(248, 250, 252);
+    doc.rect(0, 0, pageWidth, pageHeight, "F");
+
+    doc.setFillColor(79, 70, 229);
+    doc.rect(0, 0, pageWidth, 34, "F");
+    doc.setFillColor(124, 58, 237);
+    doc.circle(pageWidth - 10, -8, 38, "F");
+    doc.setFillColor(67, 56, 202);
+    doc.circle(pageWidth - 42, 24, 18, "F");
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    for (let x = -20; x < pageWidth; x += 14) {
+      doc.line(x, 48, x + 40, 8);
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.text("Settlement Bulanan", margin, 15);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(monthLabel(state.month), margin, 23);
+    doc.text("Catat Keuangan", pageWidth - margin, 15, { align: "right" });
+    doc.text(new Date().toLocaleDateString("id-ID"), pageWidth - margin, 23, { align: "right" });
+    doc.setTextColor(15, 23, 42);
+  };
+
+  const addPage = () => {
+    doc.addPage();
+    drawMotif();
+    y = 44;
+  };
+
+  const ensureSpace = (height) => {
+    if (y + height > pageHeight - 16) addPage();
+  };
+
+  const addLine = (text, size = 10, style = "normal") => {
+    ensureSpace(8);
+    doc.setFont("helvetica", style);
+    doc.setFontSize(size);
+    doc.setTextColor(15, 23, 42);
+    doc.text(String(text), margin, y);
+    y += size >= 14 ? 8 : 6;
+  };
+
+  const sectionTitle = (title) => {
+    ensureSpace(13);
+    y += 2;
+    doc.setFillColor(238, 242, 255);
+    doc.roundedRect(margin, y - 5, pageWidth - margin * 2, 10, 3, 3, "F");
+    doc.setTextColor(67, 56, 202);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(title, margin + 4, y + 1.5);
+    doc.setTextColor(15, 23, 42);
+    y += 13;
+  };
+
+  const summaryCard = (x, yPos, label, value, color) => {
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, yPos, 88, 24, 4, 4, "FD");
+    doc.setFillColor(color[0], color[1], color[2]);
+    doc.roundedRect(x, yPos, 3, 24, 2, 2, "F");
+    doc.setTextColor(100, 116, 139);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(label, x + 8, yPos + 8);
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(value, x + 8, yPos + 17);
+  };
+
+  const addKeyValueRows = (rows, emptyText) => {
+    if (rows.length === 0) {
+      addLine(emptyText, 9);
+      return;
+    }
+    rows.forEach(([name, val]) => {
+      ensureSpace(7);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(51, 65, 85);
+      doc.text(String(name), margin + 2, y);
+      doc.setFont("helvetica", "bold");
+      doc.text(fmtRpRaw(val), pageWidth - margin - 2, y, { align: "right" });
+      y += 6;
+    });
+  };
+
+  drawMotif();
+
+  ensureSpace(55);
+  summaryCard(margin, y, "Saldo Total", fmtRpRaw(sum.balance), [79, 70, 229]);
+  summaryCard(margin + 94, y, "Pemasukan", fmtRpRaw(sum.income), [16, 185, 129]);
+  y += 30;
+  summaryCard(margin, y, "Pengeluaran", fmtRpRaw(sum.expense), [244, 63, 94]);
+  summaryCard(margin + 94, y, "Selisih", fmtRpRaw(sum.net), [124, 58, 237]);
+  y += 32;
+
+  sectionTitle("Saldo per Akun");
+  addKeyValueRows(sum.accountBalances, "Tidak ada saldo akun.");
+
+  sectionTitle("Mutasi Akun Bulan Ini");
+  addKeyValueRows(sum.accountDelta, "Tidak ada akun.");
+
+  sectionTitle("Pengeluaran per Kategori");
+  addKeyValueRows(sum.categoryExpense.slice(0, 12), "Tidak ada pengeluaran.");
+
+  sectionTitle(`Daftar Transaksi (${sum.rows.length})`);
+  doc.setFontSize(8);
+  sum.rows.forEach((t, idx) => {
+    ensureSpace(13);
+    const sign = isIncome(t) ? "+" : isExpense(t) ? "-" : "";
+    const left = `${t.tanggal || ""} ${(t.jam || "").slice(0, 5)}  ${t.tipe || ""}  ${t.kategori || ""}  ${t.akun || ""}`;
+    const merchant = t.merchant || t.deskripsi || "-";
+    if (idx % 2 === 0) {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin, y - 4, pageWidth - margin * 2, 10, 2, 2, "F");
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.text(doc.splitTextToSize(left, 118), margin, y);
+    doc.setTextColor(100, 116, 139);
+    doc.text(doc.splitTextToSize(merchant, 70), margin, y + 4);
+    doc.setFont("helvetica", "bold");
+    if (isIncome(t)) doc.setTextColor(5, 150, 105);
+    else if (isExpense(t)) doc.setTextColor(190, 18, 60);
+    else doc.setTextColor(100, 116, 139);
+    doc.text(`${sign} ${fmtRpRaw(t.jumlah || 0)}`, pageWidth - margin, y, { align: "right" });
+    doc.setTextColor(15, 23, 42);
+    y += 11;
+  });
+
+  doc.save(`settlement-${state.month}.pdf`);
 }
 
 // ---------------- UI plumbing ----------------
@@ -449,6 +798,25 @@ function init() {
     localStorage.setItem(LS_HIDE, state.hide ? "1" : "0");
     render();
   };
+  document.getElementById("editAccountsBtn").onclick = () => {
+    state.editAccounts = !state.editAccounts;
+    renderAccounts();
+  };
+  document.getElementById("settlementDownloadBtn").onclick = (e) => {
+    e.stopPropagation();
+    document.getElementById("settlementDownloadMenu").classList.toggle("hidden");
+  };
+  document.getElementById("downloadSettlementPdf").onclick = () => {
+    document.getElementById("settlementDownloadMenu").classList.add("hidden");
+    downloadSettlementPdf();
+  };
+  document.getElementById("downloadSettlementCsv").onclick = () => {
+    document.getElementById("settlementDownloadMenu").classList.add("hidden");
+    downloadSettlementCsv();
+  };
+  document.addEventListener("click", () => {
+    document.getElementById("settlementDownloadMenu").classList.add("hidden");
+  });
   document.getElementById("prevMonth").onclick = () => { state.month = addMonths(state.month, -1); render(); };
   document.getElementById("nextMonth").onclick = () => { state.month = addMonths(state.month, 1); render(); };
   document.getElementById("searchInput").oninput = (e) => { state.search = e.target.value; renderTable(); };

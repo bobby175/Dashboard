@@ -52,3 +52,21 @@ Cukup file statis, bisa di-host gratis di:
 
 Karena hanya butuh URL + Secret untuk connect, dashboard yang di-host bisa dipakai
 di HP/laptop mana pun selama punya file config-nya.
+
+## Keamanan & keterbatasan
+
+Penting untuk dipahami sebelum meng-host dashboard secara publik:
+
+- **Secret = akses penuh.** `WEBHOOK_SECRET` yang dipakai dashboard adalah secret
+  yang sama dengan yang dipakai aplikasi Android, dan secret itu memberi akses
+  **baca sekaligus tulis** ke backend (bukan token read-only khusus dashboard).
+  Walau UI dashboard hanya menampilkan data, siapa pun yang memegang URL + secret
+  bisa memanggil action tulis (`save`, `update`, `delete`, dll) langsung ke Apps Script.
+- **Secret tersimpan apa adanya di browser.** Config (URL + secret) disimpan plain di
+  `localStorage`. Jangan hubungkan dashboard di perangkat/berbagi-an yang tidak kamu
+  percaya, dan logout (tombol putuskan koneksi) menghapusnya dari browser tersebut.
+- **Risiko hosting publik.** Kalau dashboard di-host di domain publik dan terkena XSS,
+  secret di `localStorage` bisa terbaca. Untuk pemakaian pribadi ini umumnya cukup,
+  tapi hindari menaruh secret di tempat yang bisa diakses orang lain.
+- **Saran:** kalau secret pernah bocor/terekspos, ganti lewat aplikasi
+  (Pengaturan → rotasi secret) yang akan memanggil `setSecret` di backend.

@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -100,7 +101,13 @@
 
             <!-- Accounts -->
             <section class="card">
-                <div class="card-head"><h2>Saldo per Akun</h2></div>
+                <div class="card-head">
+                    <div>
+                        <h2>Akun</h2>
+                        <p class="card-sub">Saldo per akun yang tersinkron dari aplikasi</p>
+                    </div>
+                    <button class="mini-btn" id="editAccountsBtn">Edit</button>
+                </div>
                 <div class="accounts" id="accounts"></div>
             </section>
 
@@ -154,8 +161,15 @@
             <section class="card">
                 <div class="card-head">
                     <h2>Riwayat Transaksi</h2>
-                    <input type="text" id="searchInput" class="search" placeholder="Cari merchant / kategori..." />
+                    <div class="download-menu">
+                        <button class="mini-btn" id="settlementDownloadBtn">Download</button>
+                        <div class="download-pop hidden" id="settlementDownloadMenu">
+                            <button id="downloadSettlementPdf">PDF</button>
+                            <button id="downloadSettlementCsv">CSV</button>
+                        </div>
+                    </div>
                 </div>
+                <input type="text" id="searchInput" class="search history-search" placeholder="Cari merchant / kategori..." />
                 <div class="filters" id="filters"></div>
                 <div class="table-wrap">
                     <table class="tx-table">
