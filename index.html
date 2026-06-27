@@ -52,6 +52,8 @@
                 <input type="text" id="manualUrl" placeholder="https://script.google.com/macros/s/.../exec" />
                 <label class="field-label">Webhook Secret</label>
                 <input type="password" id="manualSecret" placeholder="secret kamu" />
+                <label class="field-label">Profile ID</label>
+                <input type="text" id="manualProfile" placeholder="default" value="default" />
                 <button class="btn primary full" id="manualBtn">Hubungkan</button>
             </div>
 
@@ -67,10 +69,16 @@
                 <div class="brand-logo sm">Rp</div>
                 <div>
                     <strong>Catat Keuangan</strong>
+                    <span id="profileLabel" class="profile-chip">Profil: Saya</span>
                     <span id="todayLabel" class="muted"></span>
                 </div>
             </div>
             <div class="topbar-actions">
+                <div class="profile-switch">
+                    <label for="profileSelect">Profil</label>
+                    <select id="profileSelect"></select>
+                    <button class="mini-btn" id="addProfileBtn">Tambah</button>
+                </div>
                 <span id="status" class="status"></span>
                 <button class="icon-btn" id="hideBtn" title="Sembunyikan saldo">👁</button>
                 <button class="icon-btn" id="refreshBtn" title="Muat ulang">⟳</button>
@@ -151,11 +159,19 @@
                 </section>
             </div>
 
-            <!-- Recurring -->
-            <section class="card">
-                <div class="card-head"><h2>Transaksi Berulang Aktif</h2></div>
-                <div id="recurring" class="recurring-list"></div>
-            </section>
+            <div class="two-col">
+                <!-- Recurring -->
+                <section class="card">
+                    <div class="card-head"><h2>Transaksi Berulang Aktif</h2></div>
+                    <div id="recurring" class="recurring-list"></div>
+                </section>
+
+                <!-- Debts -->
+                <section class="card">
+                    <div class="card-head"><h2>Hutang / Paylater</h2></div>
+                    <div id="debts" class="debt-list"></div>
+                </section>
+            </div>
 
             <!-- Transactions -->
             <section class="card">

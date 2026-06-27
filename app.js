@@ -6,14 +6,19 @@
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
 const LS_ACCOUNT_ORDER = "ck_dashboard_account_order";
+const LS_PROFILES = "ck_dashboard_profiles_v1";
+const DEFAULT_PROFILE_ID = "default";
 
 const state = {
   url: "",
   secret: "",
+  profileId: DEFAULT_PROFILE_ID,
+  profiles: loadProfiles(),
   transactions: [],
   budgets: [],
   goals: [],
   recurring: [],
+  debts: [],
   month: currentYM(),
   gran: "harian",
   filterTipe: null,
@@ -108,9 +113,42 @@ function sortAccounts(names) {
   });
 }
 
+function loadProfiles() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_PROFILES) || "[]");
+    if (Array.isArray(raw) && raw.length) {
+      return normalizeProfiles(raw);
+    }
+  } catch (e) {
+    // ignore malformed localStorage
+  }
+  return [{ id: DEFAULT_PROFILE_ID, name: "Saya" }];
+}
+function normalizeProfiles(profiles) {
+  const map = new Map();
+  profiles.forEach((p) => {
+    const id = String(p?.id || "").trim() || DEFAULT_PROFILE_ID;
+    const name = String(p?.name || "").trim() || (id === DEFAULT_PROFILE_ID ? "Saya" : id);
+    map.set(id, { id, name });
+  });
+  if (!map.has(DEFAULT_PROFILE_ID)) map.set(DEFAULT_PROFILE_ID, { id: DEFAULT_PROFILE_ID, name: "Saya" });
+  return [...map.values()].sort((a, b) => {
+    if (a.id === DEFAULT_PROFILE_ID) return -1;
+    if (b.id === DEFAULT_PROFILE_ID) return 1;
+    return a.name.localeCompare(b.name, "id-ID");
+  });
+}
+function saveProfiles() {
+  state.profiles = normalizeProfiles(state.profiles);
+  localStorage.setItem(LS_PROFILES, JSON.stringify(state.profiles));
+}
+function activeProfile() {
+  return state.profiles.find((p) => p.id === state.profileId) || state.profiles[0] || { id: DEFAULT_PROFILE_ID, name: "Saya" };
+}
+
 // ---------------- Network ----------------
 async function callApi(action, extra = {}) {
-  const payload = JSON.stringify({ secret: state.secret, action, ...extra });
+  const payload = JSON.stringify({ secret: state.secret, action, profileId: state.profileId || DEFAULT_PROFILE_ID, ...extra });
   // text/plain → hindari CORS preflight (Apps Script tidak menangani OPTIONS)
   const resp = await fetch(state.url, {
     method: "POST",
@@ -134,11 +172,13 @@ async function loadAll() {
   showLoader(true);
   setStatus("Memuat...");
   try {
+    await loadRemoteProfiles();
     const data = await loadDashboardData();
     state.transactions = (data.transactions || []).filter((t) => t.id);
     state.budgets = data.budgets || [];
     state.goals = data.goals || [];
     state.recurring = data.recurring || [];
+    state.debts = data.debts || [];
 
     render();
     setStatus("Tersinkron • " + new Date().toLocaleTimeString("id-ID"));
@@ -150,21 +190,37 @@ async function loadAll() {
   }
 }
 
+async function loadRemoteProfiles() {
+  const remote = await safe(() => callApi("profileList").then((r) => r.profiles || []), []);
+  if (!remote.length) return;
+  const names = new Map(state.profiles.map((p) => [p.id, p.name]));
+  state.profiles = normalizeProfiles(remote.map((p) => ({
+    id: p.id,
+    name: names.get(p.id) || p.name || p.id,
+  })).concat(state.profiles));
+  if (!state.profiles.some((p) => p.id === state.profileId)) {
+    state.profileId = DEFAULT_PROFILE_ID;
+  }
+  saveProfiles();
+}
+
 async function loadDashboardData() {
   const combined = await safe(() => callApi("dashboardData"), null);
   if (combined) return combined;
 
-  const [tx, budgets, goals, recurring] = await Promise.all([
+  const [tx, budgets, goals, recurring, debts] = await Promise.all([
     callApi("list"),
     safe(() => callApi("budgetList").then((r) => r.budgets || []), []),
     safe(() => callApi("goalList").then((r) => r.goals || []), []),
     safe(() => callApi("recurringList").then((r) => r.recurring || []), []),
+    safe(() => callApi("debtList").then((r) => r.debts || []), []),
   ]);
   return {
     transactions: tx.transactions || [],
     budgets,
     goals,
     recurring,
+    debts,
   };
 }
 
@@ -191,6 +247,7 @@ function monthTx(ym) {
 
 // ---------------- Render ----------------
 function render() {
+  renderProfileUi();
   renderKpi();
   renderAccounts();
   renderCashflow();
@@ -198,6 +255,7 @@ function render() {
   renderBudgets();
   renderGoals();
   renderRecurring();
+  renderDebts();
   renderFilters();
   renderTable();
   document.getElementById("monthLabel").textContent = monthLabel(state.month);
@@ -240,6 +298,16 @@ function renderAccounts() {
       <div class="val">${fmtRp(val)}</div>
     </div>`).join("");
   if (state.editAccounts) setupAccountDrag();
+}
+
+function renderProfileUi() {
+  const profile = activeProfile();
+  document.getElementById("profileLabel").textContent = `Profil: ${profile.name}`;
+  const select = document.getElementById("profileSelect");
+  if (!select) return;
+  select.innerHTML = state.profiles.map((p) =>
+    `<option value="${esc(p.id)}"${p.id === state.profileId ? " selected" : ""}>${esc(p.name)}</option>`
+  ).join("");
 }
 
 function setupAccountDrag() {
@@ -417,6 +485,30 @@ function renderRecurring() {
           <div class="rec-sub">${f} · ${esc(r.akun || "Tunai")}</div>
         </div>
         <div class="${inc ? "amt-in" : "amt-out"}">${inc ? "+ " : "- "}${fmtRp(r.jumlah)}</div>
+      </div>`;
+  }).join("");
+}
+
+function renderDebts() {
+  const el = document.getElementById("debts");
+  if (!el) return;
+  const list = state.debts.filter((d) => d.enabled !== false);
+  if (list.length === 0) { el.innerHTML = '<div class="muted">Belum ada hutang/paylater aktif.</div>'; return; }
+  el.innerHTML = list.map((d) => {
+    const total = Number(d.totalAmount || 0);
+    const paid = Number(d.paidAmount || 0);
+    const remaining = Math.max(0, total - paid);
+    const pct = total > 0 ? Math.max(0, Math.min(100, (paid / total) * 100)) : 0;
+    const provider = d.provider ? ` Â· ${esc(d.provider)}` : "";
+    return `
+      <div class="debt-item">
+        <div>
+          <div class="debt-name">${esc(d.name || "Hutang")}</div>
+          <div class="debt-sub">Jatuh tempo ${esc(d.dueDate || "-")}${provider}</div>
+        </div>
+        <div class="debt-amount">${fmtRp(remaining)}</div>
+        <div class="debt-bar"><span style="width:${pct}%"></span></div>
+        <div class="debt-sub">Dibayar ${fmtRp(paid)} dari ${fmtRp(total)}</div>
       </div>`;
   }).join("");
 }
@@ -718,14 +810,19 @@ function downloadSettlementPdf() {
 function showLoader(b) { document.getElementById("loader").classList.toggle("hidden", !b); }
 function setStatus(s) { document.getElementById("status").textContent = s; }
 
-function connect(url, secret) {
+function connect(url, secret, profileId = DEFAULT_PROFILE_ID) {
   state.url = (url || "").trim().replace(/\s/g, "");
   state.secret = (secret || "").trim();
+  state.profileId = (profileId || DEFAULT_PROFILE_ID).trim() || DEFAULT_PROFILE_ID;
   if (!state.url.startsWith("https://") || !state.url.includes("script.google.com")) {
     return setupMsg("URL harus URL Web App Apps Script (diakhiri /exec).", true);
   }
   if (!state.secret) return setupMsg("Secret tidak boleh kosong.", true);
-  localStorage.setItem(LS_KEY, JSON.stringify({ url: state.url, secret: state.secret }));
+  if (!state.profiles.some((p) => p.id === state.profileId)) {
+    state.profiles.push({ id: state.profileId, name: state.profileId === DEFAULT_PROFILE_ID ? "Saya" : state.profileId });
+    saveProfiles();
+  }
+  localStorage.setItem(LS_KEY, JSON.stringify({ url: state.url, secret: state.secret, profileId: state.profileId }));
   showApp();
   loadAll();
 }
@@ -750,8 +847,9 @@ function parseConfig(text) {
   try { obj = JSON.parse(text); } catch (e) { return null; }
   const url = obj.webhookUrl || obj.url || "";
   const secret = obj.webhookSecret || obj.secret || "";
+  const profileId = obj.activeProfileId || obj.profileId || DEFAULT_PROFILE_ID;
   if (!url) return null;
-  return { url, secret };
+  return { url, secret, profileId };
 }
 
 // ---------------- Init ----------------
@@ -780,10 +878,14 @@ function init() {
   document.getElementById("pasteBtn").onclick = () => {
     const cfg = parseConfig(document.getElementById("pasteArea").value);
     if (!cfg) return setupMsg("JSON tidak valid / tidak ada webhookUrl.", true);
-    connect(cfg.url, cfg.secret);
+    connect(cfg.url, cfg.secret, cfg.profileId);
   };
   document.getElementById("manualBtn").onclick = () => {
-    connect(document.getElementById("manualUrl").value, document.getElementById("manualSecret").value);
+    connect(
+      document.getElementById("manualUrl").value,
+      document.getElementById("manualSecret").value,
+      document.getElementById("manualProfile").value || DEFAULT_PROFILE_ID
+    );
   };
 
   // App controls
@@ -801,6 +903,31 @@ function init() {
   document.getElementById("editAccountsBtn").onclick = () => {
     state.editAccounts = !state.editAccounts;
     renderAccounts();
+  };
+  document.getElementById("profileSelect").onchange = (e) => {
+    state.profileId = e.target.value || DEFAULT_PROFILE_ID;
+    localStorage.setItem(LS_KEY, JSON.stringify({ url: state.url, secret: state.secret, profileId: state.profileId }));
+    state.filterTipe = null;
+    state.filterAkun = null;
+    state.search = "";
+    document.getElementById("searchInput").value = "";
+    loadAll();
+  };
+  document.getElementById("addProfileBtn").onclick = () => {
+    const id = prompt("Masukkan Profile ID sesuai data aplikasi/Sheets:", "default");
+    if (id === null) return;
+    const cleanId = id.trim() || DEFAULT_PROFILE_ID;
+    const name = prompt("Nama tampilan profil:", cleanId === DEFAULT_PROFILE_ID ? "Saya" : cleanId);
+    if (name === null) return;
+    const cleanName = name.trim() || cleanId;
+    state.profiles = normalizeProfiles([...state.profiles, { id: cleanId, name: cleanName }]);
+    state.profileId = cleanId;
+    saveProfiles();
+    localStorage.setItem(LS_KEY, JSON.stringify({ url: state.url, secret: state.secret, profileId: state.profileId }));
+    safe(() => callApi("profileUpsert", {
+      profile: { id: cleanId, name: cleanName, createdAt: Date.now() }
+    }), null);
+    loadAll();
   };
   document.getElementById("settlementDownloadBtn").onclick = (e) => {
     e.stopPropagation();
@@ -834,7 +961,11 @@ function init() {
   if (saved) {
     try {
       const cfg = JSON.parse(saved);
-      state.url = cfg.url; state.secret = cfg.secret;
+      state.url = cfg.url; state.secret = cfg.secret; state.profileId = cfg.profileId || DEFAULT_PROFILE_ID;
+      if (!state.profiles.some((p) => p.id === state.profileId)) {
+        state.profiles.push({ id: state.profileId, name: state.profileId === DEFAULT_PROFILE_ID ? "Saya" : state.profileId });
+        saveProfiles();
+      }
       showApp(); loadAll();
     } catch (e) { showSetup(); }
   }
@@ -846,7 +977,7 @@ function handleFile(file) {
   reader.onload = () => {
     const cfg = parseConfig(reader.result);
     if (!cfg) return setupMsg("File config tidak valid.", true);
-    connect(cfg.url, cfg.secret);
+    connect(cfg.url, cfg.secret, cfg.profileId);
   };
   reader.readAsText(file);
 }
