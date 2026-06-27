@@ -551,12 +551,12 @@ function renderTable() {
   body.innerHTML = rows.map((t) => {
     const inc = isIncome(t);
     return `<tr>
-      <td>${esc(t.tanggal)}${t.jam ? `<br><span class="muted" style="font-size:11px">${esc(t.jam.slice(0,5))}</span>` : ""}</td>
-      <td>${esc(t.tipe)}</td>
-      <td>${esc(t.kategori || "-")}</td>
-      <td>${esc(t.akun || "-")}</td>
-      <td>${esc(t.merchant || "-")}</td>
-      <td class="right ${inc ? "amt-in" : "amt-out"}">${inc ? "+ " : "- "}${fmtRp(t.jumlah)}</td>
+      <td data-label="Tanggal">${esc(t.tanggal)}${t.jam ? `<br><span class="muted" style="font-size:11px">${esc(t.jam.slice(0,5))}</span>` : ""}</td>
+      <td data-label="Tipe">${esc(t.tipe)}</td>
+      <td data-label="Kategori">${esc(t.kategori || "-")}</td>
+      <td data-label="Akun">${esc(t.akun || "-")}</td>
+      <td data-label="Merchant">${esc(t.merchant || "-")}</td>
+      <td data-label="Jumlah" class="right ${inc ? "amt-in" : "amt-out"}">${inc ? "+ " : "- "}${fmtRp(t.jumlah)}</td>
     </tr>`;
   }).join("");
 }
