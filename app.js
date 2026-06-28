@@ -46,6 +46,27 @@ function monthLabel(ym) {
   const names = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
   return `${names[m] || m} ${y}`;
 }
+function parseIsoLocal(iso) {
+  const [y, m, d] = String(iso || "").split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function formatReadableDate(iso) {
+  const d = parseIsoLocal(iso);
+  if (!d) return iso || "-";
+  return d.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+function clampDateToMonth(date, ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const start = new Date(y, m - 1, 1);
+  const end = new Date(y, m, 0);
+  if (date < start) return start;
+  if (date > end) return end;
+  return date;
+}
 function ymOf(iso) {
   return (iso || "").slice(0, 7);
 }
@@ -402,12 +423,58 @@ function renderCashflow() {
   else cashflowChart = new Chart(ctx, { type: "line", data, options: opts });
 }
 
+function categoryPeriod() {
+  const monthRows = monthTx(state.month)
+    .filter((t) => isExpense(t) && !isTransfer(t))
+    .sort((a, b) => String(b.tanggal || "").localeCompare(String(a.tanggal || "")));
+  const todayIso = isoDate(new Date());
+  const fallbackIso = monthRows[0]?.tanggal || `${state.month}-01`;
+  const refIso = ymOf(todayIso) === state.month ? todayIso : fallbackIso;
+  const refDate = parseIsoLocal(refIso) || parseIsoLocal(`${state.month}-01`);
+
+  if (state.gran === "harian") {
+    return {
+      label: `Harian - ${formatReadableDate(refIso)}`,
+      rows: monthRows.filter((t) => t.tanggal === refIso),
+    };
+  }
+
+  if (state.gran === "mingguan") {
+    const base = clampDateToMonth(refDate, state.month);
+    const day = base.getDay() === 0 ? 7 : base.getDay();
+    const start = new Date(base);
+    start.setDate(base.getDate() - day + 1);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    const [y, m] = state.month.split("-").map(Number);
+    const monthStart = new Date(y, m - 1, 1);
+    const monthEnd = new Date(y, m, 0);
+    const clippedStart = start < monthStart ? monthStart : start;
+    const clippedEnd = end > monthEnd ? monthEnd : end;
+    const startIso = isoDate(clippedStart);
+    const endIso = isoDate(clippedEnd);
+    return {
+      label: `Mingguan - ${formatReadableDate(startIso)} s/d ${formatReadableDate(endIso)}`,
+      rows: monthRows.filter((t) => t.tanggal >= startIso && t.tanggal <= endIso),
+    };
+  }
+
+  return {
+    label: `Bulanan - ${monthLabel(state.month)}`,
+    rows: monthRows,
+  };
+}
+
 function renderCategory() {
-  const mtx = monthTx(state.month).filter((t) => isExpense(t) && !isTransfer(t));
+  const period = categoryPeriod();
+  const labelEl = document.getElementById("categoryPeriodLabel");
+  if (labelEl) labelEl.textContent = period.label;
+  const mtx = period.rows;
   const by = {};
   mtx.forEach((t) => { const k = t.kategori || "Lainnya"; by[k] = (by[k] || 0) + t.jumlah; });
   const entries = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const ctx = document.getElementById("categoryChart");
+  const empty = document.getElementById("categoryEmpty");
   const data = {
     labels: entries.map((e) => e[0]),
     datasets: [{ data: entries.map((e) => e[1]), backgroundColor: PALETTE, borderWidth: 0 }],
@@ -422,9 +489,11 @@ function renderCategory() {
   if (entries.length === 0) {
     if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
     ctx.style.display = "none";
+    if (empty) empty.classList.remove("hidden");
     return;
   }
   ctx.style.display = "";
+  if (empty) empty.classList.add("hidden");
   if (categoryChart) { categoryChart.data = data; categoryChart.options = opts; categoryChart.update(); }
   else categoryChart = new Chart(ctx, { type: "doughnut", data, options: opts });
 }
@@ -580,6 +649,23 @@ function settlementSummary() {
   const balances = accountBalances();
   const categoryExpense = {};
   const accountDelta = {};
+  const debtRows = state.debts
+    .filter((d) => d.enabled !== false)
+    .map((d) => {
+      const total = Number(d.totalAmount || 0);
+      const paid = Number(d.paidAmount || 0);
+      return {
+        name: d.name || "Hutang/Paylater",
+        provider: d.provider || "",
+        dueDate: d.dueDate || "",
+        account: d.account || "Tunai",
+        total,
+        paid,
+        remaining: Math.max(0, total - paid),
+      };
+    })
+    .filter((d) => d.total > 0 || d.remaining > 0)
+    .sort((a, b) => String(a.dueDate || "9999-99-99").localeCompare(String(b.dueDate || "9999-99-99")));
 
   rows.forEach((t) => {
     const akun = t.akun || "Tunai";
@@ -597,6 +683,10 @@ function settlementSummary() {
     expense,
     net: income - expense,
     balance: Object.values(balances).reduce((a, b) => a + b, 0),
+    debts: debtRows,
+    debtTotal: debtRows.reduce((a, d) => a + d.total, 0),
+    debtPaid: debtRows.reduce((a, d) => a + d.paid, 0),
+    debtRemaining: debtRows.reduce((a, d) => a + d.remaining, 0),
     accountBalances: sortAccounts(Object.keys(balances))
       .filter((name) => balances[name] !== 0)
       .map((name) => [name, balances[name]]),
@@ -631,9 +721,24 @@ function downloadSettlementCsv() {
     ["Pengeluaran", fmtRpRaw(sum.expense)],
     ["Selisih", fmtRpRaw(sum.net)],
     ["Total Transaksi", sum.rows.length],
+    ["Total Hutang/Paylater", fmtRpRaw(sum.debtTotal)],
+    ["Terbayar Hutang/Paylater", fmtRpRaw(sum.debtPaid)],
+    ["Sisa Hutang/Paylater", fmtRpRaw(sum.debtRemaining)],
     [],
     ["Saldo per Akun"],
     ...sum.accountBalances.map(([name, val]) => [name, fmtRpRaw(val)]),
+    [],
+    ["Hutang / Paylater"],
+    ["Nama", "Provider", "Jatuh Tempo", "Akun Bayar", "Total", "Terbayar", "Sisa"],
+    ...sum.debts.map((d) => [
+      d.name,
+      d.provider,
+      d.dueDate,
+      d.account,
+      Math.round(d.total || 0),
+      Math.round(d.paid || 0),
+      Math.round(d.remaining || 0),
+    ]),
     [],
     ["Tanggal", "Jam", "Tipe", "Kategori", "Akun", "Merchant", "Deskripsi", "Jumlah"],
     ...sum.rows.map((t) => [
@@ -758,6 +863,30 @@ function downloadSettlementPdf() {
     });
   };
 
+  const addDebtRows = (rows) => {
+    if (rows.length === 0) {
+      addLine("Tidak ada hutang/paylater aktif.", 9);
+      return;
+    }
+    rows.forEach((d) => {
+      ensureSpace(14);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin, y - 4, pageWidth - margin * 2, 11, 2, 2, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(51, 65, 85);
+      const title = d.provider ? `${d.name} - ${d.provider}` : d.name;
+      doc.text(doc.splitTextToSize(title, 92), margin + 2, y);
+      doc.setTextColor(180, 83, 9);
+      doc.text(fmtRpRaw(d.remaining), pageWidth - margin - 2, y, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Jatuh tempo: ${d.dueDate || "-"} | Dibayar: ${fmtRpRaw(d.paid)} dari ${fmtRpRaw(d.total)}`, margin + 2, y + 5);
+      y += 12;
+    });
+  };
+
   drawMotif();
 
   ensureSpace(55);
@@ -765,7 +894,7 @@ function downloadSettlementPdf() {
   summaryCard(margin + 94, y, "Pemasukan", fmtRpRaw(sum.income), [16, 185, 129]);
   y += 30;
   summaryCard(margin, y, "Pengeluaran", fmtRpRaw(sum.expense), [244, 63, 94]);
-  summaryCard(margin + 94, y, "Selisih", fmtRpRaw(sum.net), [124, 58, 237]);
+  summaryCard(margin + 94, y, "Sisa Paylater", fmtRpRaw(sum.debtRemaining), [245, 158, 11]);
   y += 32;
 
   sectionTitle("Saldo per Akun");
@@ -776,6 +905,14 @@ function downloadSettlementPdf() {
 
   sectionTitle("Pengeluaran per Kategori");
   addKeyValueRows(sum.categoryExpense.slice(0, 12), "Tidak ada pengeluaran.");
+
+  sectionTitle("Hutang / Paylater");
+  addKeyValueRows([
+    ["Total Tagihan", sum.debtTotal],
+    ["Sudah Dibayar", sum.debtPaid],
+    ["Sisa Tagihan", sum.debtRemaining],
+  ], "Tidak ada hutang/paylater aktif.");
+  addDebtRows(sum.debts);
 
   sectionTitle(`Daftar Transaksi (${sum.rows.length})`);
   doc.setFontSize(8);
@@ -953,6 +1090,7 @@ function init() {
       b.classList.add("active");
       state.gran = b.dataset.gran;
       renderCashflow();
+      renderCategory();
     };
   });
 

@@ -140,8 +140,14 @@
 
                 <!-- Category breakdown -->
                 <section class="card">
-                    <div class="card-head"><h2>Pengeluaran per Kategori</h2></div>
+                    <div class="card-head">
+                        <div>
+                            <h2>Pengeluaran per Kategori</h2>
+                            <p class="card-sub" id="categoryPeriodLabel">Mengikuti pilihan periode</p>
+                        </div>
+                    </div>
                     <canvas id="categoryChart" height="160"></canvas>
+                    <div id="categoryEmpty" class="empty hidden">Tidak ada pengeluaran pada periode ini.</div>
                 </section>
             </div>
 
