@@ -280,6 +280,8 @@ function render() {
   renderFilters();
   renderTable();
   document.getElementById("monthLabel").textContent = monthLabel(state.month);
+  const monthPicker = document.getElementById("monthPicker");
+  if (monthPicker) monthPicker.value = state.month;
   document.getElementById("todayLabel").textContent =
     new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
@@ -1083,6 +1085,11 @@ function init() {
   });
   document.getElementById("prevMonth").onclick = () => { state.month = addMonths(state.month, -1); render(); };
   document.getElementById("nextMonth").onclick = () => { state.month = addMonths(state.month, 1); render(); };
+  document.getElementById("monthPicker").onchange = (e) => {
+    if (!e.target.value) return;
+    state.month = e.target.value;
+    render();
+  };
   document.getElementById("searchInput").oninput = (e) => { state.search = e.target.value; renderTable(); };
   document.querySelectorAll(".seg-btn").forEach((b) => {
     b.onclick = () => {

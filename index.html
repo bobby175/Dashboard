@@ -132,7 +132,10 @@
                     </div>
                     <div class="month-nav">
                         <button class="icon-btn" id="prevMonth">‹</button>
-                        <span id="monthLabel"></span>
+                        <div class="month-current">
+                            <span id="monthLabel"></span>
+                            <input type="month" id="monthPicker" aria-label="Pilih bulan" />
+                        </div>
                         <button class="icon-btn" id="nextMonth">›</button>
                     </div>
                     <canvas id="cashflowChart" height="120"></canvas>
