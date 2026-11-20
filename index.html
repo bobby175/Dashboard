@@ -2,222 +2,380 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Catat Keuangan — Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Catat Keuangan</title>
+    <meta name="description" content="Catat pemasukan, pengeluaran, transfer, budget, dan goal tabungan. Sinkron dengan aplikasi Catat Keuangan di HP." />
+    <meta name="theme-color" content="#D63F86" id="metaThemeColor" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Catat Keuangan" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+        // Terapkan tema sebelum halaman digambar supaya tidak berkedip.
+        (function () {
+            var dark = false;
+            try {
+                var pref = localStorage.getItem("ck_dashboard_theme") || "system";
+                dark = pref === "dark" || (pref === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+            } catch (e) { /* abaikan */ }
+            document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+        })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" crossorigin="anonymous" defer></script>
+    <script src="app.js" defer></script>
 </head>
 <body>
-    <!-- ============ SETUP / CONNECT SCREEN ============ -->
-    <div id="setup" class="setup-wrap">
+    <!-- Ikon garis (gaya Feather, MIT) + ikon toples tabungan. Tidak memakai display:none
+         supaya gradient di dalam simbol tetap tergambar. -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+        <symbol id="i-jar" viewBox="31 20 46 62">
+            <defs><linearGradient id="j-glass" x1="35" y1="45" x2="73" y2="80" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE3F0"/></linearGradient><linearGradient id="j-lid" x1="38" y1="34" x2="70" y2="44" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8EF0C9"/><stop offset="1" stop-color="#45C99C"/></linearGradient><clipPath id="j-jarClip"><path d="M42,45 H66 Q72.6,45.6 73,54 V70 A10,10 0 0 1 63,80 H45 A10,10 0 0 1 35,70 V54 Q35.4,45.6 42,45 Z"/></clipPath></defs>
+            <path d="M48,27.2 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.4"/>
+            <path d="M50.7,27.2 a3.3,3.3 0 1,0 6.6,0 a3.3,3.3 0 1,0 -6.6,0 z" fill="none" stroke="#F2A33A" stroke-width="1.1"/>
+            <path d="M43,34 h22 a5,5 0 0 1 5,5 v0 a5,5 0 0 1 -5,5 h-22 a5,5 0 0 1 -5,-5 v0 a5,5 0 0 1 5,-5 z" fill="url(#j-lid)"/>
+            <path d="M49.6,37.7 h8.8 a1.3,1.3 0 0 1 1.3,1.3 v0 a1.3,1.3 0 0 1 -1.3,1.3 h-8.8 a1.3,1.3 0 0 1 -1.3,-1.3 v0 a1.3,1.3 0 0 1 1.3,-1.3 z" fill="#0B4F49"/>
+            <path d="M42,45 H66 Q72.6,45.6 73,54 V70 A10,10 0 0 1 63,80 H45 A10,10 0 0 1 35,70 V54 Q35.4,45.6 42,45 Z" fill="url(#j-glass)" stroke="#F0B9D5" stroke-width="1"/>
+            <g clip-path="url(#j-jarClip)">
+                <path d="M43.6,73.6 a5.4,5.4 0 1,0 10.8,0 a5.4,5.4 0 1,0 -10.8,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+                <path d="M54.6,73.2 a5.4,5.4 0 1,0 10.8,0 a5.4,5.4 0 1,0 -10.8,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+                <path d="M37.3,78.6 a6.2,6.2 0 1,0 12.4,0 a6.2,6.2 0 1,0 -12.4,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+                <path d="M48.3,80.2 a6.2,6.2 0 1,0 12.4,0 a6.2,6.2 0 1,0 -12.4,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+                <path d="M59,78.2 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+            </g>
+            <path d="M39.4,55 Q38.6,60 39.4,65" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+            <path d="M40.6,61 a2.8,1.7 0 1,0 5.6,0 a2.8,1.7 0 1,0 -5.6,0 z M61.8,61 a2.8,1.7 0 1,0 5.6,0 a2.8,1.7 0 1,0 -5.6,0 z" fill="#FF8CC6" fill-opacity="0.6"/>
+            <path d="M45.2,56.6 a2.3,2.3 0 1,0 4.6,0 a2.3,2.3 0 1,0 -4.6,0 z M58.2,56.6 a2.3,2.3 0 1,0 4.6,0 a2.3,2.3 0 1,0 -4.6,0 z M50.6,60.4 Q54,64.8 57.4,60.4 Q54,62.6 50.6,60.4 z" fill="#3D2A3F"/>
+            <path d="M47.6,55.8 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 z M60.6,55.8 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 z" fill="#FFFFFF"/>
+        </symbol>
+        <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15v-6H9v6H4.5A1.5 1.5 0 0 1 3 20z"/></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></symbol>
+        <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4h-12A2.5 2.5 0 0 0 3 6.5v11A2.5 2.5 0 0 0 5.5 20h14a1.5 1.5 0 0 0 1.5-1.5v-10A1.5 1.5 0 0 0 19.5 7H5.5A2.5 2.5 0 0 1 3 4.5"/><circle cx="16.5" cy="13.5" r="1.2"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+        <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 19.5C5 19.5 1 12 1 12a18.45 18.45 0 0 1 5.06-5.94M9.9 4.74A9.12 9.12 0 0 1 12 4.5c7 0 11 7.5 11 7.5a18.5 18.5 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24M1 1l22 22"/></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+        <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+        <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 3v18M7 3 3 7M7 3l4 4M17 21V3M17 21l-4-4M17 21l4-4"/></symbol>
+        <symbol id="i-up" viewBox="0 0 24 24"><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="M23 18l-9.5-9.5-5 5L1 6"/><path d="M17 18h6v-6"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="M21 21l-4.35-4.35"/></symbol>
+        <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M11 18h2"/></symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+        <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+        <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+        <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 2c.6 4.6 2.4 6.9 7 7.5-4.6.6-6.4 2.9-7 7.5-.6-4.6-2.4-6.9-7-7.5 4.6-.6 6.4-2.9 7-7.5z"/></symbol>
+    </svg>
+
+    <!-- ============ SETUP / CONNECT ============ -->
+    <div id="setup" class="setup hidden">
         <div class="setup-card">
-            <div class="brand">
-                <div class="brand-logo">Rp</div>
-                <div>
-                    <h1>Catat Keuangan</h1>
-                    <p>Dashboard Web</p>
-                </div>
+            <div class="setup-hero">
+                <span class="sparkle s1" aria-hidden="true">✦</span>
+                <span class="sparkle s2" aria-hidden="true">✦</span>
+                <img src="icons/icon.svg" class="setup-logo" alt="" width="76" height="76" />
+                <h1>Catat Keuangan</h1>
+                <p>Catat &amp; pantau uangmu dari mana saja ✨</p>
             </div>
             <p class="setup-desc">
-                Hubungkan dashboard ke backend yang sama dengan aplikasi HP kamu.
-                Pakai file konfigurasi yang diekspor dari aplikasi (Pengaturan → Backup & Pindah → Bagikan),
-                atau isi manual.
+                Hubungkan ke backend yang sama dengan aplikasi HP kamu. Ambil file konfigurasi dari aplikasi
+                (<b>Pengaturan → Backup &amp; Pindah → Bagikan</b>), atau isi manual.
             </p>
 
-            <div class="tabs">
-                <button class="tab active" data-tab="file">Impor File JSON</button>
-                <button class="tab" data-tab="paste">Tempel JSON</button>
-                <button class="tab" data-tab="manual">Manual</button>
+            <div class="seg seg-full" role="tablist" aria-label="Cara menghubungkan">
+                <button class="seg-btn active" data-setup-tab="file" role="tab">📂 File</button>
+                <button class="seg-btn" data-setup-tab="paste" role="tab">📋 Tempel</button>
+                <button class="seg-btn" data-setup-tab="manual" role="tab">✍️ Manual</button>
             </div>
 
-            <div class="tab-body" id="tab-file">
+            <div class="setup-tab" id="setup-file">
                 <label class="dropzone" id="dropzone">
                     <input type="file" id="fileInput" accept="application/json,.json,text/plain" hidden />
-                    <div class="dz-icon">📂</div>
-                    <div class="dz-text">Klik untuk pilih file <b>catat-keuangan-config-*.json</b></div>
-                    <div class="dz-sub">atau seret &amp; lepas file ke sini</div>
+                    <span class="dz-icon" aria-hidden="true">🗂️</span>
+                    <span class="dz-text">Klik untuk pilih file <b>catat-keuangan-config-*.json</b></span>
+                    <span class="dz-sub">atau seret &amp; lepas file ke sini</span>
                 </label>
             </div>
 
-            <div class="tab-body hidden" id="tab-paste">
-                <textarea id="pasteArea" rows="6" placeholder='{ "webhookUrl": "https://script.google.com/macros/s/.../exec", "webhookSecret": "..." }'></textarea>
-                <button class="btn primary full" id="pasteBtn">Hubungkan</button>
+            <div class="setup-tab hidden" id="setup-paste">
+                <textarea id="pasteArea" rows="5" placeholder='{ "webhookUrl": "https://script.google.com/macros/s/.../exec", "webhookSecret": "..." }'></textarea>
+                <button class="btn btn-primary btn-block" id="pasteBtn" type="button">Hubungkan</button>
             </div>
 
-            <div class="tab-body hidden" id="tab-manual">
-                <label class="field-label">URL Web App Apps Script</label>
-                <input type="text" id="manualUrl" placeholder="https://script.google.com/macros/s/.../exec" />
-                <label class="field-label">Webhook Secret</label>
-                <input type="password" id="manualSecret" placeholder="secret kamu" />
-                <label class="field-label">Profile ID</label>
-                <input type="text" id="manualProfile" placeholder="default" value="default" />
-                <button class="btn primary full" id="manualBtn">Hubungkan</button>
+            <div class="setup-tab hidden" id="setup-manual">
+                <label class="field">
+                    <span class="field-label">URL Web App Apps Script</span>
+                    <input type="url" id="manualUrl" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Webhook Secret</span>
+                    <input type="password" id="manualSecret" placeholder="secret kamu" autocomplete="off" />
+                </label>
+                <button class="btn btn-primary btn-block" id="manualBtn" type="button">Hubungkan</button>
             </div>
 
-            <div id="setupMsg" class="setup-msg"></div>
+            <div id="setupMsg" class="setup-msg" role="status"></div>
         </div>
-        <div class="setup-foot">Data hanya tersimpan di browser ini (localStorage). Tidak dikirim ke pihak ketiga.</div>
+        <p class="setup-foot">🔒 Konfigurasi hanya disimpan di browser ini. Tidak dikirim ke pihak ketiga.</p>
     </div>
 
-    <!-- ============ DASHBOARD ============ -->
+    <!-- ============ APP ============ -->
     <div id="app" class="app hidden">
-        <header class="topbar">
-            <div class="brand sm">
-                <div class="brand-logo sm">Rp</div>
-                <div>
-                    <strong>Catat Keuangan</strong>
-                    <span id="profileLabel" class="profile-chip">Profil: Saya</span>
-                    <span id="todayLabel" class="muted"></span>
-                </div>
-            </div>
-            <div class="topbar-actions">
-                <div class="profile-switch">
-                    <label for="profileSelect">Profil</label>
-                    <select id="profileSelect"></select>
-                    <button class="mini-btn" id="addProfileBtn">Tambah</button>
-                </div>
-                <span id="status" class="status"></span>
-                <button class="icon-btn" id="hideBtn" title="Sembunyikan saldo">👁</button>
-                <button class="icon-btn" id="refreshBtn" title="Muat ulang">⟳</button>
-                <button class="icon-btn" id="disconnectBtn" title="Putuskan koneksi">⎋</button>
-            </div>
-        </header>
+        <div id="offlineBar" class="offline-bar hidden" role="status">
+            📴 Kamu sedang offline — menampilkan data terakhir. Perubahan bisa disimpan lagi saat online.
+        </div>
 
-        <main class="content">
-            <!-- KPI -->
-            <section class="kpi-grid">
-                <div class="kpi card accent-indigo">
-                    <div class="kpi-label">Saldo Total</div>
-                    <div class="kpi-value" id="kpiBalance">—</div>
-                </div>
-                <div class="kpi card accent-green">
-                    <div class="kpi-label">Pemasukan (bulan ini)</div>
-                    <div class="kpi-value" id="kpiIncome">—</div>
-                </div>
-                <div class="kpi card accent-red">
-                    <div class="kpi-label">Pengeluaran (bulan ini)</div>
-                    <div class="kpi-value" id="kpiExpense">—</div>
-                </div>
-                <div class="kpi card accent-violet">
-                    <div class="kpi-label">Transaksi (bulan ini)</div>
-                    <div class="kpi-value" id="kpiCount">—</div>
-                </div>
-            </section>
-
-            <!-- Accounts -->
-            <section class="card">
-                <div class="card-head">
-                    <div>
-                        <h2>Akun</h2>
-                        <p class="card-sub">Saldo per akun yang tersinkron dari aplikasi</p>
-                    </div>
-                    <button class="mini-btn" id="editAccountsBtn">Edit</button>
-                </div>
-                <div class="accounts" id="accounts"></div>
-            </section>
-
-            <div class="two-col">
-                <!-- Cash flow chart -->
-                <section class="card">
-                    <div class="card-head">
-                        <h2>Arus Kas</h2>
-                        <div class="seg" id="granSeg">
-                            <button class="seg-btn active" data-gran="harian">Harian</button>
-                            <button class="seg-btn" data-gran="mingguan">Mingguan</button>
-                            <button class="seg-btn" data-gran="bulanan">Bulanan</button>
+        <!-- HOME -->
+        <section class="page" id="page-home" data-page="home">
+            <header class="hero">
+                <span class="sparkle s1" aria-hidden="true">✦</span>
+                <span class="sparkle s2" aria-hidden="true">✦</span>
+                <span class="sparkle s3" aria-hidden="true">✦</span>
+                <div class="hero-top">
+                    <div class="hero-brand">
+                        <img src="icons/icon.svg" alt="" class="hero-logo" width="40" height="40" />
+                        <div>
+                            <div class="hero-greet" id="greeting">Halo!</div>
+                            <div class="hero-date" id="todayLabel"></div>
                         </div>
                     </div>
-                    <div class="month-nav">
-                        <button class="icon-btn" id="prevMonth">‹</button>
-                        <div class="month-current">
-                            <span id="monthLabel"></span>
-                            <input type="month" id="monthPicker" aria-label="Pilih bulan" />
-                        </div>
-                        <button class="icon-btn" id="nextMonth">›</button>
+                    <div class="hero-actions">
+                        <button class="hero-btn" id="hideBtn" type="button" aria-label="Sembunyikan saldo" title="Sembunyikan saldo">
+                            <svg class="ico"><use href="#i-eye"/></svg>
+                        </button>
+                        <button class="hero-btn" id="refreshBtn" type="button" aria-label="Muat ulang data" title="Muat ulang data">
+                            <svg class="ico"><use href="#i-refresh"/></svg>
+                        </button>
                     </div>
-                    <canvas id="cashflowChart" height="120"></canvas>
+                </div>
+                <div class="hero-label">Saldo total</div>
+                <div class="hero-balance" id="kpiBalance">—</div>
+                <div class="hero-pills">
+                    <div class="pill">
+                        <span class="pill-ico"><svg class="ico"><use href="#i-up"/></svg></span>
+                        <div><div class="pill-label">Pemasukan</div><div class="pill-val" id="kpiIncome">—</div></div>
+                    </div>
+                    <div class="pill">
+                        <span class="pill-ico"><svg class="ico"><use href="#i-down"/></svg></span>
+                        <div><div class="pill-label">Pengeluaran</div><div class="pill-val" id="kpiExpense">—</div></div>
+                    </div>
+                </div>
+                <div class="hero-status" id="status" aria-live="polite"></div>
+            </header>
+
+            <div class="page-body">
+                <div id="installBanner" class="install-banner hidden">
+                    <span class="install-emoji" aria-hidden="true">📲</span>
+                    <div class="install-text">
+                        <b>Pasang Catat Keuangan</b>
+                        <span>Buka langsung dari layar utama, seperti aplikasi.</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm" type="button" data-action="install">Pasang</button>
+                    <button class="icon-btn icon-btn-sm" type="button" data-action="dismiss-install" aria-label="Tutup">
+                        <svg class="ico"><use href="#i-close"/></svg>
+                    </button>
+                </div>
+
+                <section class="block">
+                    <div class="block-head">
+                        <h2>💳 Akun</h2>
+                        <button class="link-btn" id="editAccountsBtn" type="button">Atur urutan</button>
+                    </div>
+                    <div class="accounts" id="accounts"></div>
                 </section>
 
-                <!-- Category breakdown -->
+                <section class="block">
+                    <div class="block-head">
+                        <h2>🧾 Transaksi Bulan Ini</h2>
+                        <button class="link-btn" type="button" data-goto="history">Lihat semua ›</button>
+                    </div>
+                    <label class="search-wrap">
+                        <svg class="ico"><use href="#i-search"/></svg>
+                        <input type="search" id="homeSearch" class="search" placeholder="Cari merchant / catatan..." aria-label="Cari transaksi bulan ini" />
+                    </label>
+                    <div class="chips" id="homeFilters"></div>
+                    <div class="tx-list" id="homeList"></div>
+                </section>
+            </div>
+        </section>
+
+        <!-- HISTORY -->
+        <section class="page hidden" id="page-history" data-page="history">
+            <header class="topbar">
+                <button class="icon-btn" type="button" data-goto="home" aria-label="Kembali">
+                    <svg class="ico"><use href="#i-back"/></svg>
+                </button>
+                <h1>Riwayat Transaksi</h1>
+                <div class="pop-wrap">
+                    <button class="icon-btn" type="button" id="downloadBtn" aria-label="Download laporan" title="Download laporan">
+                        <svg class="ico"><use href="#i-download"/></svg>
+                    </button>
+                    <div class="pop hidden" id="downloadMenu">
+                        <button type="button" data-download="pdf">📄 Laporan PDF</button>
+                        <button type="button" data-download="csv">📊 Laporan CSV</button>
+                    </div>
+                </div>
+            </header>
+            <div class="page-body">
+                <div class="month-nav">
+                    <button class="icon-btn" type="button" data-month="-1" aria-label="Bulan sebelumnya"><svg class="ico"><use href="#i-back"/></svg></button>
+                    <span class="month-label" data-month-label></span>
+                    <button class="icon-btn" type="button" data-month="1" aria-label="Bulan berikutnya"><svg class="ico"><use href="#i-next"/></svg></button>
+                </div>
+                <div class="summary3" id="histSummary"></div>
+                <label class="search-wrap">
+                    <svg class="ico"><use href="#i-search"/></svg>
+                    <input type="search" id="histSearch" class="search" placeholder="Cari merchant / kategori / catatan..." aria-label="Cari riwayat" />
+                </label>
+                <div class="chips" id="histFilters"></div>
+                <div id="histList"></div>
+            </div>
+        </section>
+
+        <!-- STATS -->
+        <section class="page hidden" id="page-stats" data-page="stats">
+            <header class="hero hero-sm">
+                <span class="sparkle s1" aria-hidden="true">✦</span>
+                <span class="sparkle s2" aria-hidden="true">✦</span>
+                <div class="hero-title-row">
+                    <h1>📊 Statistik</h1>
+                    <div class="month-switch">
+                        <button class="hero-btn" type="button" data-month="-1" aria-label="Bulan sebelumnya"><svg class="ico"><use href="#i-back"/></svg></button>
+                        <span class="month-label" data-month-label></span>
+                        <button class="hero-btn" type="button" data-month="1" aria-label="Bulan berikutnya"><svg class="ico"><use href="#i-next"/></svg></button>
+                    </div>
+                </div>
+                <div class="hero-pills three" id="statsPills"></div>
+            </header>
+            <div class="page-body grid-2">
+                <section class="card">
+                    <div class="card-head">
+                        <h2>🌊 Arus Kas</h2>
+                        <div class="seg seg-sm" id="granSeg">
+                            <button class="seg-btn active" type="button" data-gran="harian">Harian</button>
+                            <button class="seg-btn" type="button" data-gran="mingguan">Mingguan</button>
+                            <button class="seg-btn" type="button" data-gran="bulanan">Bulanan</button>
+                        </div>
+                    </div>
+                    <div class="chart-box"><canvas id="cashflowChart" aria-label="Grafik arus kas"></canvas></div>
+                    <div class="empty hidden" id="cashflowEmpty">Belum ada data di periode ini 🌱</div>
+                </section>
+                <section class="card">
+                    <div class="card-head"><h2>🍩 Pengeluaran per Kategori</h2></div>
+                    <div class="donut-wrap">
+                        <div class="chart-box chart-donut"><canvas id="categoryChart" aria-label="Grafik pengeluaran per kategori"></canvas></div>
+                        <div class="cat-list" id="categoryList"></div>
+                    </div>
+                </section>
+                <section class="card">
+                    <div class="card-head"><h2>🏪 Merchant Teratas</h2></div>
+                    <div id="topMerchants" class="rank-list"></div>
+                </section>
+                <section class="card">
+                    <div class="card-head"><h2>📈 Dibanding Bulan Lalu</h2></div>
+                    <div id="compareList" class="rank-list"></div>
+                </section>
+            </div>
+        </section>
+
+        <!-- MONEY -->
+        <section class="page hidden" id="page-money" data-page="money">
+            <header class="hero hero-sm">
+                <span class="sparkle s1" aria-hidden="true">✦</span>
+                <span class="sparkle s2" aria-hidden="true">✦</span>
+                <div class="hero-title-row">
+                    <h1>👛 Money</h1>
+                </div>
+                <p class="hero-sub">Atur budget, kejar goal tabungan, dan jadwalkan transaksi rutin.</p>
+            </header>
+            <div class="page-body grid-2">
                 <section class="card">
                     <div class="card-head">
                         <div>
-                            <h2>Pengeluaran per Kategori</h2>
-                            <p class="card-sub" id="categoryPeriodLabel">Mengikuti pilihan periode</p>
+                            <h2>🧮 Budget Bulanan</h2>
+                            <div class="month-switch month-switch-sm">
+                                <button class="icon-btn icon-btn-sm" type="button" data-budget-month="-1" aria-label="Bulan sebelumnya"><svg class="ico"><use href="#i-back"/></svg></button>
+                                <span class="month-label" id="budgetMonthLabel"></span>
+                                <button class="icon-btn icon-btn-sm" type="button" data-budget-month="1" aria-label="Bulan berikutnya"><svg class="ico"><use href="#i-next"/></svg></button>
+                            </div>
                         </div>
+                        <button class="btn btn-soft btn-sm" type="button" data-action="add-budget"><svg class="ico"><use href="#i-plus"/></svg>Budget</button>
                     </div>
-                    <canvas id="categoryChart" height="160"></canvas>
-                    <div id="categoryEmpty" class="empty hidden">Tidak ada pengeluaran pada periode ini.</div>
+                    <div id="budgetList" class="prog-list"></div>
+                    <div id="budgetCopy"></div>
                 </section>
-            </div>
-
-            <div class="two-col">
-                <!-- Budgets -->
                 <section class="card">
-                    <div class="card-head"><h2>Budget Bulanan</h2></div>
-                    <div id="budgets" class="prog-list"></div>
+                    <div class="card-head">
+                        <h2>🎯 Goal Tabungan</h2>
+                        <button class="btn btn-soft btn-sm" type="button" data-action="add-goal"><svg class="ico"><use href="#i-plus"/></svg>Goal</button>
+                    </div>
+                    <div id="goalList" class="goal-list"></div>
                 </section>
-
-                <!-- Goals -->
-                <section class="card">
-                    <div class="card-head"><h2>Goal Tabungan</h2></div>
-                    <div id="goals" class="prog-list"></div>
-                </section>
-            </div>
-
-            <div class="two-col">
-                <!-- Recurring -->
-                <section class="card">
-                    <div class="card-head"><h2>Transaksi Berulang Aktif</h2></div>
-                    <div id="recurring" class="recurring-list"></div>
-                </section>
-
-                <!-- Debts -->
-                <section class="card">
-                    <div class="card-head"><h2>Hutang / Paylater</h2></div>
-                    <div id="debts" class="debt-list"></div>
-                </section>
-            </div>
-
-            <!-- Transactions -->
-            <section class="card">
-                <div class="card-head">
-                    <h2>Riwayat Transaksi</h2>
-                    <div class="download-menu">
-                        <button class="mini-btn" id="settlementDownloadBtn">Download</button>
-                        <div class="download-pop hidden" id="settlementDownloadMenu">
-                            <button id="downloadSettlementPdf">PDF</button>
-                            <button id="downloadSettlementCsv">CSV</button>
+                <section class="card span-2">
+                    <div class="card-head">
+                        <div>
+                            <h2>🔁 Transaksi Berulang</h2>
+                            <p class="card-sub">Dijalankan otomatis oleh aplikasi HP sesuai jadwal.</p>
                         </div>
+                        <button class="btn btn-soft btn-sm" type="button" data-action="add-recurring"><svg class="ico"><use href="#i-plus"/></svg>Jadwal</button>
                     </div>
-                </div>
-                <input type="text" id="searchInput" class="search history-search" placeholder="Cari merchant / kategori..." />
-                <div class="filters" id="filters"></div>
-                <div class="table-wrap">
-                    <table class="tx-table">
-                        <thead>
-                            <tr>
-                                <th>Tanggal</th><th>Tipe</th><th>Kategori</th>
-                                <th>Akun</th><th>Merchant</th><th class="right">Jumlah</th>
-                            </tr>
-                        </thead>
-                        <tbody id="txBody"></tbody>
-                    </table>
-                </div>
-                <div id="txEmpty" class="empty hidden">Tidak ada transaksi.</div>
-            </section>
+                    <div id="recurringList" class="rec-list"></div>
+                </section>
+            </div>
+        </section>
 
-            <footer class="foot">
-                Dashboard Catat Keuangan • data sinkron dengan aplikasi via Apps Script
-            </footer>
-        </main>
+        <!-- SETTINGS -->
+        <section class="page hidden" id="page-settings" data-page="settings">
+            <header class="hero hero-sm">
+                <span class="sparkle s1" aria-hidden="true">✦</span>
+                <span class="sparkle s2" aria-hidden="true">✦</span>
+                <div class="hero-title-row"><h1>⚙️ Pengaturan</h1></div>
+                <p class="hero-sub" id="settingsSub">Atur tampilan &amp; koneksi web.</p>
+            </header>
+            <div class="page-body settings" id="settingsBody"></div>
+        </section>
 
-        <div id="loader" class="loader hidden"><div class="spinner"></div></div>
+        <!-- Navigasi bawah -->
+        <nav class="bottom-nav" aria-label="Navigasi utama">
+            <button class="nav-tab active" type="button" data-tab="home"><svg class="ico"><use href="#i-home"/></svg><span>Home</span></button>
+            <button class="nav-tab" type="button" data-tab="stats"><svg class="ico"><use href="#i-chart"/></svg><span>Statistik</span></button>
+            <button class="fab" type="button" id="fabAdd" aria-label="Tambah transaksi"><svg class="ico"><use href="#i-plus"/></svg></button>
+            <button class="nav-tab" type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg><span>Money</span></button>
+            <button class="nav-tab" type="button" data-tab="settings"><svg class="ico"><use href="#i-gear"/></svg><span>Pengaturan</span></button>
+        </nav>
     </div>
 
-    <script src="app.js"></script>
-</body>
-</html>
+    <!-- Bottom sheet / dialog form -->
+    <div id="sheet" class="sheet-root hidden">
+        <div class="sheet-backdrop" data-sheet-close></div>
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <div class="sheet-head">
+                <h3 id="sheetTitle"></h3>
+                <button class="icon-btn" type="button" data-sheet-close aria-label="Tutup"><svg class="ico"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="sheet-body" id="sheetBody"></div>
+        </div>
+    </div>
+
+    <!-- Konfirmasi -->
+    <div id="confirm" class="confirm-root hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
+        <div class="confirm-card">
+        

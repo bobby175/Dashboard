@@ -1,0 +1,41 @@
+{
+  "id": "./",
+  "name": "Catat Keuangan",
+  "short_name": "Catat Keuangan",
+  "description": "Catat pemasukan, pengeluaran, transfer, budget, dan goal tabungan. Sinkron dengan aplikasi Catat Keuangan di HP.",
+  "lang": "id",
+  "dir": "ltr",
+  "start_url": "./?sumber=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFF7FA",
+  "theme_color": "#D63F86",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Catat Pengeluaran",
+      "short_name": "Pengeluaran",
+      "url": "./?aksi=keluar",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Catat Pemasukan",
+      "short_name": "Pemasukan",
+      "url": "./?aksi=masuk",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Pindah Saldo",
+      "short_name": "Transfer",
+      "url": "./?aksi=transfer",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

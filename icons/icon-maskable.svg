@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+  <!-- Logo Catat Keuangan: toples tabungan berisi koin (tema Candy Pastel). Dibuat oleh gen-icon.js -->
+  <defs>
+    <linearGradient id="bg" x1="4" y1="0" x2="104" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D63F86"/><stop offset="0.55" stop-color="#A04FD6"/><stop offset="1" stop-color="#6F5BEA"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="35" y1="45" x2="73" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFE3F0"/>
+    </linearGradient>
+    <linearGradient id="lid" x1="38" y1="34" x2="70" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8EF0C9"/><stop offset="1" stop-color="#45C99C"/>
+    </linearGradient>
+    <clipPath id="jarClip"><path d="M42,45 H66 Q72.6,45.6 73,54 V70 A10,10 0 0 1 63,80 H45 A10,10 0 0 1 35,70 V54 Q35.4,45.6 42,45 Z"/></clipPath>
+    <clipPath id="round"><rect width="108" height="108" rx="26"/></clipPath>
+  </defs>
+  <g>
+  <rect width="108" height="108" fill="url(#bg)"/>
+  <path d="M50,22 a40,40 0 1,0 80,0 a40,40 0 1,0 -80,0 z" fill="#FFFFFF" fill-opacity="0.08"/>
+  <path d="M-12,96 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0 z" fill="#FFFFFF" fill-opacity="0.06"/>
+  <g transform="translate(54 54) scale(1.12) translate(-54 -53.5)">
+    <path d="M48,27.2 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.4"/>
+    <path d="M50.7,27.2 a3.3,3.3 0 1,0 6.6,0 a3.3,3.3 0 1,0 -6.6,0 z" fill="none" stroke="#F2A33A" stroke-width="1.1"/>
+    <path d="M43,34 h22 a5,5 0 0 1 5,5 v0 a5,5 0 0 1 -5,5 h-22 a5,5 0 0 1 -5,-5 v0 a5,5 0 0 1 5,-5 z" fill="url(#lid)"/>
+    <path d="M42,35.8 h3.6 a0.8,0.8 0 0 1 0.8,0.8 v0 a0.8,0.8 0 0 1 -0.8,0.8 h-3.6 a0.8,0.8 0 0 1 -0.8,-0.8 v0 a0.8,0.8 0 0 1 0.8,-0.8 z" fill="#FFFFFF" fill-opacity="0.6"/>
+    <path d="M49.6,37.7 h8.8 a1.3,1.3 0 0 1 1.3,1.3 v0 a1.3,1.3 0 0 1 -1.3,1.3 h-8.8 a1.3,1.3 0 0 1 -1.3,-1.3 v0 a1.3,1.3 0 0 1 1.3,-1.3 z" fill="#0B4F49"/>
+    <path d="M42,45 H66 Q72.6,45.6 73,54 V70 A10,10 0 0 1 63,80 H45 A10,10 0 0 1 35,70 V54 Q35.4,45.6 42,45 Z" fill="url(#glass)" fill-opacity="0.95"/>
+    <g clip-path="url(#jarClip)">
+      <path d="M43.6,73.6 a5.4,5.4 0 1,0 10.8,0 a5.4,5.4 0 1,0 -10.8,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+      <path d="M54.6,73.2 a5.4,5.4 0 1,0 10.8,0 a5.4,5.4 0 1,0 -10.8,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+      <path d="M37.3,78.6 a6.2,6.2 0 1,0 12.4,0 a6.2,6.2 0 1,0 -12.4,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+      <path d="M48.3,80.2 a6.2,6.2 0 1,0 12.4,0 a6.2,6.2 0 1,0 -12.4,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+      <path d="M59,78.2 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z" fill="#FFD166" stroke="#F2A33A" stroke-width="1.2"/>
+    </g>
+    <path d="M39.4,55 Q38.6,60 39.4,65" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M40.6,61 a2.8,1.7 0 1,0 5.6,0 a2.8,1.7 0 1,0 -5.6,0 z" fill="#FF8CC6" fill-opacity="0.6"/>
+    <path d="M61.8,61 a2.8,1.7 0 1,0 5.6,0 a2.8,1.7 0 1,0 -5.6,0 z" fill="#FF8CC6" fill-opacity="0.6"/>
+    <path d="M45.2,56.6 a2.3,2.3 0 1,0 4.6,0 a2.3,2.3 0 1,0 -4.6,0 z" fill="#3D2A3F"/>
+    <path d="M58.2,56.6 a2.3,2.3 0 1,0 4.6,0 a2.3,2.3 0 1,0 -4.6,0 z" fill="#3D2A3F"/>
+    <path d="M47.6,55.8 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 z" fill="#FFFFFF"/>
+    <path d="M60.6,55.8 a0.7,0.7 0 1,0 1.4,0 a0.7,0.7 0 1,0 -1.4,0 z" fill="#FFFFFF"/>
+    <path d="M50.6,60.4 Q54,64.8 57.4,60.4 Q54,62.6 50.6,60.4 z" fill="#3D2A3F"/>
+    <path d="M77,32.5 Q77,37 81.5,37 Q77,37 77,41.5 Q77,37 72.5,37 Q77,37 77,32.5 z" fill="#FFFFFF"/>
+    <path d="M29.5,40.7 Q29.5,43.5 32.3,43.5 Q29.5,43.5 29.5,46.3 Q29.5,43.5 26.7,43.5 Q29.5,43.5 29.5,40.7 z" fill="#FFE08A"/>
+    <path d="M76.8,66.5 a1.2,1.2 0 1,0 2.4,0 a1.2,1.2 0 1,0 -2.4,0 z" fill="#FFFFFF" fill-opacity="0.7"/>
+  </g>
+  </g>
+</svg>
