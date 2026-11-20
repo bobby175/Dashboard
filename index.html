@@ -378,4 +378,18 @@
     <!-- Konfirmasi -->
     <div id="confirm" class="confirm-root hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
         <div class="confirm-card">
-        
+            <div class="confirm-emoji" id="confirmEmoji" aria-hidden="true">🤔</div>
+            <p id="confirmText"></p>
+            <div class="confirm-actions">
+                <button class="btn btn-ghost" type="button" id="confirmNo">Batal</button>
+                <button class="btn btn-danger" type="button" id="confirmYes">Ya, lanjut</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <div id="loader" class="loader hidden" aria-hidden="true">
+        <div class="loader-card"><div class="loader-icon"><svg class="art"><use href="#i-jar"/></svg></div><div class="spinner"></div><div class="loader-text">Memuat data...</div></div>
+    </div>
+</body>
+</html>

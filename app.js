@@ -11,7 +11,7 @@
  */
 "use strict";
 
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.0.2";
 
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
@@ -634,9 +634,20 @@ function renderFilterChips(elId, f, accountNames) {
 }
 
 // ---------------- Home ----------------
+/** Total semua waktu tanpa transfer — sama dengan ringkasan di Home aplikasi Android. */
+function allTimeTotals() {
+  const rows = state.transactions.filter((t) => !isTransfer(t));
+  return {
+    income: rows.filter(isIncome).reduce((a, t) => a + t.jumlah, 0),
+    expense: rows.filter(isExpense).reduce((a, t) => a + t.jumlah, 0),
+  };
+}
+
+function latestTx() { return sortTxDesc(state.transactions)[0] || null; }
+
 function renderHome() {
   const ym = currentYM();
-  const totals = monthTotals(ym);
+  const totals = allTimeTotals();
   document.getElementById("greeting").textContent = greeting();
   document.getElementById("todayLabel").textContent = longDateLabel(todayIso());
   document.getElementById("kpiBalance").textContent = fmtRp(totalBalance());
@@ -655,9 +666,17 @@ function renderHome() {
   const rows = sortTxDesc(applyFilters(monthRows, state.home));
   const list = document.getElementById("homeList");
   if (rows.length === 0) {
-    list.innerHTML = monthRows.length === 0
-      ? emptyState("🌸", "Belum ada transaksi bulan ini. Yuk mulai catat!", `<br><button class="btn btn-primary btn-sm" type="button" data-action="add">➕ Catat transaksi</button>`)
-      : emptyState("🔎", "Tidak ada transaksi yang cocok dengan filter.");
+    const last = latestTx();
+    if (monthRows.length > 0) {
+      list.innerHTML = emptyState("🔎", "Tidak ada transaksi yang cocok dengan filter.");
+    } else if (last) {
+      // Ada data di bulan lain → arahkan ke bulan terakhir yang ada transaksinya
+      list.innerHTML = emptyState("🗓️", `Belum ada transaksi bulan ini. Terakhir dicatat ${dateLabel(last.tanggal, true)}.`,
+        `<br><button class="btn btn-soft btn-sm" type="button" data-action="history-latest">Lihat ${esc(monthLabel(ymOf(last.tanggal)))}</button>
+         <button class="btn btn-primary btn-sm" type="button" data-action="add">➕ Catat</button>`);
+    } else {
+      list.innerHTML = emptyState("🌸", "Belum ada transaksi. Yuk mulai catat!", `<br><button class="btn btn-primary btn-sm" type="button" data-action="add">➕ Catat transaksi</button>`);
+    }
     return;
   }
   const shown = rows.slice(0, HOME_LIST_LIMIT);
@@ -2406,6 +2425,11 @@ function bindEvents() {
         localStorage.setItem(LS_INSTALL_DISMISS, "1");
         return updateInstallBanner();
       case "refresh": return loadAll();
+      case "history-latest": {
+        const last = latestTx();
+        if (last) state.month = ymOf(last.tanggal);
+        return goTo("history");
+      }
       case "disconnect":
         return askConfirm("Putuskan koneksi & hapus konfigurasi dari browser ini?", { yes: "Ya, putuskan", emoji: "🔌" })
           .then((ok) => { if (ok) disconnect(); });
