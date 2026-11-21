@@ -29,6 +29,19 @@ Tampilannya memakai tema "Candy Pastel" yang sama dengan aplikasi HP (terang / g
 | Money | Budget bulanan (+ salin dari bulan lalu), goal tabungan (+ tombol Tabung), transaksi berulang |
 | Pengaturan | Tema, sembunyikan saldo, pasang aplikasi, notifikasi Telegram, laporan, putuskan koneksi |
 
+### Tampilan PC / Windows (layar ≥ 1024 px)
+
+- **Sidebar kiri** menggantikan navigasi bawah, dengan menu Riwayat sendiri dan tombol *Catat cepat*.
+- Isi **memenuhi layar**: Home punya hero lebar, kartu akun dalam grid, dan panel ringkasan
+  (bulan ini, budget, goal, jadwal berikutnya) di samping daftar transaksi.
+- **Riwayat dalam bentuk tabel** (jam, keterangan, kategori, akun, jumlah), dikelompokkan per hari.
+- Statistik dengan grafik lebih besar, Money 3 kolom di layar ≥ 1440 px, Pengaturan 2 kolom.
+- Form transaksi dua kolom di dialog lebar.
+- **Layar penuh**: tombol di sidebar / Pengaturan, atau tekan <kbd>F</kbd> (<kbd>Esc</kbd> untuk keluar).
+- **Pintasan keyboard**: <kbd>N</kbd> catat, <kbd>/</kbd> cari, <kbd>R</kbd> sinkron,
+  <kbd>1</kbd>–<kbd>5</kbd> pindah halaman, <kbd>Enter</kbd> buka baris tabel yang dipilih.
+- Di HP tampilannya tetap seperti aplikasi (navigasi bawah).
+
 Tombol **+** di tengah: catat pengeluaran, catat pemasukan, atau pindah saldo antar akun.
 Ketuk transaksi untuk mengubah atau menghapusnya (transfer diubah/dihapus sepasang).
 
