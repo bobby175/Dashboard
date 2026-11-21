@@ -11,7 +11,7 @@
  */
 "use strict";
 
-const APP_VERSION = "2.0.2";
+const APP_VERSION = "2.1.0";
 
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
@@ -88,6 +88,10 @@ let cashflowChart = null;
 let categoryChart = null;
 let deferredInstallPrompt = null;
 let refreshTimer = null;
+
+// Layar PC (≥ 1024px): sidebar, ringkasan samping di Home, riwayat dalam bentuk tabel
+const desktopQuery = window.matchMedia("(min-width: 1024px)");
+function isDesktop() { return desktopQuery.matches; }
 
 // ---------------- Utils: tanggal ----------------
 function pad2(n) { return String(n).padStart(2, "0"); }
@@ -653,12 +657,16 @@ function renderHome() {
   document.getElementById("kpiBalance").textContent = fmtRp(totalBalance());
   document.getElementById("kpiIncome").textContent = fmtRp(totals.income);
   document.getElementById("kpiExpense").textContent = fmtRp(totals.expense);
-  const hideBtn = document.getElementById("hideBtn");
-  hideBtn.innerHTML = `<svg class="ico"><use href="#${state.hide ? "i-eye-off" : "i-eye"}"/></svg>`;
-  hideBtn.setAttribute("aria-label", state.hide ? "Tampilkan saldo" : "Sembunyikan saldo");
-  hideBtn.title = hideBtn.getAttribute("aria-label");
+  for (const id of ["hideBtn", "sideHideBtn"]) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.innerHTML = `<svg class="ico"><use href="#${state.hide ? "i-eye-off" : "i-eye"}"/></svg>`;
+    btn.setAttribute("aria-label", state.hide ? "Tampilkan saldo" : "Sembunyikan saldo");
+    btn.title = btn.getAttribute("aria-label");
+  }
 
   renderAccounts();
+  renderHomeSide();
 
   const monthRows = monthTx(ym);
   const accountNames = sortAccounts([...new Set(monthRows.map((t) => t.akun))]);
@@ -683,6 +691,65 @@ function renderHome() {
   list.innerHTML = shown.map(txRow).join("") + (rows.length > shown.length
     ? `<button class="btn btn-ghost btn-block more-btn" type="button" data-goto="history">Lihat semua (${rows.length} transaksi)</button>`
     : "");
+}
+
+function miniProgress(emoji, name, pct, color, sub) {
+  return `
+    <div class="mini-prog">
+      <div class="top"><span aria-hidden="true">${emoji}</span><span class="name">${esc(name)}</span><span style="color:${color}">${Math.round(pct)}%</span></div>
+      <div class="bar"><span style="width:${clamp(pct, 0, 100).toFixed(1)}%;background:${color}"></span></div>
+      <div class="sub">${sub}</div>
+    </div>`;
+}
+
+/** Panel ringkasan di samping daftar transaksi (hanya terlihat di layar PC). */
+function renderHomeSide() {
+  const el = document.getElementById("homeSide");
+  if (!el || !isDesktop()) return;
+  const ym = currentYM();
+  const t = monthTotals(ym);
+  const budgets = state.budgets.filter((b) => b.bulan === ym && b.enabled !== false)
+    .map(budgetView).sort((a, b) => b.pct - a.pct).slice(0, 4);
+  const goals = state.goals.filter((g) => g.enabled !== false).map(goalView).sort((a, b) => b.pct - a.pct).slice(0, 3);
+  const upcoming = state.recurring.filter((r) => r.enabled !== false)
+    .map((r) => ({ r, next: upcomingRun(r) })).filter((x) => x.next)
+    .sort((a, b) => a.next.localeCompare(b.next)).slice(0, 4);
+  const topCats = Object.entries(expenseByCategory(ym)).sort((a, b) => b[1] - a[1]).slice(0, 4);
+
+  el.innerHTML = `
+    <section class="card side-card">
+      <div class="card-head"><h2>📅 ${esc(monthLabel(ym))}</h2><button class="link-btn" type="button" data-goto="stats">Statistik ›</button></div>
+      <div class="mini-stats">
+        <div><span>Pemasukan</span><b class="amt-in">${esc(fmtRp(t.income))}</b></div>
+        <div><span>Pengeluaran</span><b class="amt-out">${esc(fmtRp(t.expense))}</b></div>
+        <div><span>Selisih</span><b>${esc(fmtRp(t.net))}</b></div>
+      </div>
+      ${topCats.length ? `<div style="margin-top:12px">${topCats.map(([name, val]) => {
+        const pct = t.expense > 0 ? (val / t.expense) * 100 : 0;
+        return miniProgress(categoryStyle(name).emoji, name, pct, categoryStyle(name).c, esc(fmtRp(val)));
+      }).join("")}</div>` : ""}
+    </section>
+    <section class="card side-card">
+      <div class="card-head"><h2>🧮 Budget</h2><button class="link-btn" type="button" data-goto="money">Kelola ›</button></div>
+      ${budgets.length
+        ? budgets.map((v) => miniProgress(categoryStyle(v.b.kategori).emoji, v.b.kategori, v.pct, STATUS_COLOR[v.status], `${esc(fmtRp(v.spent))} / ${esc(fmtRp(v.limit))}`)).join("")
+        : `<p class="side-empty">Belum ada budget bulan ini.</p>`}
+    </section>
+    <section class="card side-card">
+      <div class="card-head"><h2>🎯 Goal</h2><button class="link-btn" type="button" data-goto="money">Lihat ›</button></div>
+      ${goals.length
+        ? goals.map((v) => miniProgress(v.status === "done" ? "🏆" : "🎯", v.g.name, v.pct, v.status === "done" ? "#10B981" : "#C9367A", `${esc(fmtRp(v.saldo))} / ${esc(fmtRp(v.target))}`)).join("")
+        : `<p class="side-empty">Belum ada goal tabungan.</p>`}
+    </section>
+    <section class="card side-card">
+      <div class="card-head"><h2>🔁 Jadwal Berikutnya</h2></div>
+      ${upcoming.length
+        ? upcoming.map(({ r, next }) => `
+          <div class="mini-stats" style="padding:6px 0;border-top:1px dashed var(--line)">
+            <div><span>${esc(dateLabel(next))} · ${esc(r.merchant || r.kategori)}</span><b class="${sameText(r.tipe, "Pemasukan") ? "amt-in" : "amt-out"}">${esc(fmtRp(r.jumlah))}</b></div>
+          </div>`).join("")
+        : `<p class="side-empty">Belum ada transaksi berulang aktif.</p>`}
+    </section>`;
 }
 
 function renderAccounts() {
@@ -749,14 +816,43 @@ function renderHistory() {
     if (!groups.has(t.tanggal)) groups.set(t.tanggal, []);
     groups.get(t.tanggal).push(t);
   });
-  el.innerHTML = [...groups.entries()].map(([date, list]) => {
-    const net = list.filter((t) => !isTransfer(t)).reduce((a, t) => a + (isIncome(t) ? t.jumlah : isExpense(t) ? -t.jumlah : 0), 0);
-    return `
+  const dayNet = (list) => list.filter((t) => !isTransfer(t)).reduce((a, t) => a + (isIncome(t) ? t.jumlah : isExpense(t) ? -t.jumlah : 0), 0);
+  const netHtml = (net, cls = "") => Math.round(net) === 0 ? "" :
+    `<span class="${cls} ${net > 0 ? "amt-in" : "amt-out"}">${net > 0 ? "+" : "−"} ${esc(fmtRp(Math.abs(net)))}</span>`;
+
+  if (isDesktop()) {
+    // PC: tabel yang rapi, satu baris per transaksi, dikelompokkan per hari
+    el.innerHTML = `
+      <div class="table-card"><table class="tx-table">
+        <thead><tr><th>Jam</th><th>Keterangan</th><th>Kategori</th><th>Akun</th><th class="right">Jumlah</th></tr></thead>
+        <tbody>${[...groups.entries()].map(([date, list]) => `
+          <tr class="day-row"><td colspan="5"><b>${esc(longDateLabel(date))}</b>${netHtml(dayNet(list), "day-net")}</td></tr>
+          ${list.map(txTableRow).join("")}`).join("")}
+        </tbody>
+      </table></div>`;
+    return;
+  }
+  el.innerHTML = [...groups.entries()].map(([date, list]) => `
       <div class="day-group">
-        <div class="day-head"><b>${esc(longDateLabel(date))}</b>${Math.round(net) === 0 ? "" : `<span class="${net > 0 ? "amt-in" : "amt-out"}">${net > 0 ? "+" : "−"} ${esc(fmtRp(Math.abs(net)))}</span>`}</div>
+        <div class="day-head"><b>${esc(longDateLabel(date))}</b>${netHtml(dayNet(list))}</div>
         <div class="tx-list">${list.map(txRow).join("")}</div>
-      </div>`;
-  }).join("");
+      </div>`).join("");
+}
+
+function txTableRow(t) {
+  const inc = isIncome(t);
+  const transfer = isTransfer(t);
+  const cs = categoryStyle(transfer ? "Transfer" : t.kategori);
+  const title = t.merchant || t.kategori || "(tanpa nama)";
+  const amtClass = transfer ? "amt-neutral" : inc ? "amt-in" : "amt-out";
+  return `
+    <tr class="tx-row" data-tx="${esc(t.id)}" tabindex="0">
+      <td class="cell-time">${esc((t.jam || "").slice(0, 5) || "—")}</td>
+      <td class="cell-main"><b>${esc(title)}</b>${t.deskripsi ? `<span>${esc(t.deskripsi)}</span>` : ""}</td>
+      <td><span class="cat-chip" style="--c:${cs.c};--cbg:${cs.bg}">${cs.emoji} ${esc(transfer ? "Transfer" : categoryKey(t.kategori))}</span></td>
+      <td><span class="acct-tag" style="${acctVars(t.akun)}">${esc(t.akun)}</span></td>
+      <td class="right tx-amt ${amtClass}">${inc ? "+" : "−"} ${esc(fmtRp(t.jumlah))}</td>
+    </tr>`;
 }
 
 // ---------------- Statistik ----------------
@@ -1115,6 +1211,12 @@ function renderSettings() {
         <div class="set-text"><div class="set-title">Pasang di perangkat</div><div class="set-sub">${esc(installSub)}</div></div>
         ${installHtml}
       </div>
+      ${document.fullscreenEnabled ? `
+      <div class="set-row">
+        <span class="set-ico"><svg class="ico"><use href="#${document.fullscreenElement ? "i-shrink" : "i-expand"}"/></svg></span>
+        <div class="set-text"><div class="set-title">Layar penuh</div><div class="set-sub">Sembunyikan bilah browser &amp; taskbar. Tekan <kbd>F</kbd> atau <kbd>Esc</kbd> untuk keluar.</div></div>
+        <button class="btn btn-soft btn-sm" type="button" data-action="fullscreen">${document.fullscreenElement ? "Keluar" : "Aktifkan"}</button>
+      </div>` : ""}
       <div class="set-row">
         <span class="set-ico"><svg class="ico"><use href="#i-refresh"/></svg></span>
         <div class="set-text"><div class="set-title">Sinkronkan sekarang</div><div class="set-sub">${state.loadedAt ? "Terakhir: " + esc(new Date(state.loadedAt).toLocaleString("id-ID")) : "Belum pernah tersinkron"}</div></div>
@@ -1161,8 +1263,9 @@ function renderSettings() {
 let sheetOpen = false;
 let lastFocus = null;
 
-function openSheet(title, html, onMount) {
+function openSheet(title, html, onMount, { wide = false } = {}) {
   const root = document.getElementById("sheet");
+  root.querySelector(".sheet").classList.toggle("sheet-wide", wide);
   document.getElementById("sheetTitle").textContent = title;
   const body = document.getElementById("sheetBody");
   body.innerHTML = html;
@@ -1259,9 +1362,9 @@ function readAmount(input) {
   const d = input.value.replace(/\D/g, "");
   return d ? Number(d) : 0;
 }
-function amountFieldHtml(id, value, label = "Jumlah") {
+function amountFieldHtml(id, value, label = "Jumlah", extraClass = "") {
   return `
-    <label class="field">
+    <label class="field ${extraClass}">
       <span class="field-label">${esc(label)}</span>
       <span class="amount-wrap"><span>Rp</span><input id="${id}" inputmode="numeric" autocomplete="off" placeholder="0" value="${esc(formatAmountText(value))}" aria-label="${esc(label)} dalam rupiah" /></span>
     </label>`;
@@ -1304,14 +1407,8 @@ function openAddMenu() {
       <button class="action-row" type="button" data-add="Pemasukan"><span class="emo" style="--cbg:#D1FAE5" aria-hidden="true">💰</span><div><b>Catat Pemasukan</b><span>Gaji, bonus, uang masuk lainnya</span></div></button>
       <button class="action-row" type="button" data-add="transfer"><span class="emo" style="--cbg:#EFE4FF" aria-hidden="true">🔁</span><div><b>Pindah Saldo</b><span>Transfer antar akun / dompet</span></div></button>
     </div>
-    <p class="sheet-foot-note">📷 Scan struk &amp; tangkap notifikasi tersedia di aplikasi HP.</p>`, (body) => {
-    body.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-add]");
-      if (!btn) return;
-      if (btn.dataset.add === "transfer") openTransferForm();
-      else openTxForm({ tipe: btn.dataset.add });
-    });
-  });
+    <p class="sheet-foot-note">📷 Scan struk &amp; tangkap notifikasi tersedia di aplikasi HP.</p>`);
+  // Klik [data-add] ditangani handler global (juga dipakai tombol "Catat cepat" di sidebar PC)
 }
 
 // ---------------- Form transaksi ----------------
@@ -1332,19 +1429,19 @@ function openTxForm({ tx = null, tipe = "Pengeluaran" } = {}) {
 
   const html = `
     <form class="form" id="txForm" novalidate>
-      <div class="type-toggle" role="radiogroup" aria-label="Tipe transaksi">
+      <div class="type-toggle f-type" role="radiogroup" aria-label="Tipe transaksi">
         <button type="button" class="type-btn out ${f.tipe === "Pengeluaran" ? "active" : ""}" data-tipe="Pengeluaran">🔻 Pengeluaran</button>
         <button type="button" class="type-btn in ${f.tipe === "Pemasukan" ? "active" : ""}" data-tipe="Pemasukan">🔺 Pemasukan</button>
       </div>
-      ${amountFieldHtml("fAmount", tx ? tx.jumlah : 0)}
-      <div class="field"><span class="field-label">Kategori</span>${pickGroup("fCat", categoryItems(), f.kategori)}</div>
-      <div class="field"><span class="field-label">Akun</span>${pickGroup("fAkun", accountItems(), f.akun)}<div class="hint" id="fSaldo"></div></div>
-      <label class="field"><span class="field-label">Nama / Merchant</span>
+      ${amountFieldHtml("fAmount", tx ? tx.jumlah : 0, "Jumlah", "f-amount")}
+      <div class="field f-cat"><span class="field-label">Kategori</span>${pickGroup("fCat", categoryItems(), f.kategori)}</div>
+      <div class="field f-acct"><span class="field-label">Akun</span>${pickGroup("fAkun", accountItems(), f.akun)}<div class="hint" id="fSaldo"></div></div>
+      <label class="field f-merchant"><span class="field-label">Nama / Merchant</span>
         <input id="fMerchant" list="fMerchantList" maxlength="80" placeholder="mis. Warung Bu Siti" value="${esc(tx ? tx.merchant : "")}" autocomplete="off" /></label>
       <datalist id="fMerchantList">${[...merchants.values()].slice(0, 60).map((t) => `<option value="${esc(t.merchant.trim())}"></option>`).join("")}</datalist>
-      <label class="field"><span class="field-label">Catatan</span>
+      <label class="field f-desc"><span class="field-label">Catatan</span>
         <input id="fDesc" maxlength="200" placeholder="opsional, bisa pakai #tag" value="${esc(tx ? tx.deskripsi : "")}" autocomplete="off" /></label>
-      <div class="row-2">
+      <div class="row-2 f-dt">
         <label class="field"><span class="field-label">Tanggal</span><input type="date" id="fDate" value="${esc(initialDate)}" required /></label>
         <label class="field"><span class="field-label">Jam</span><input type="time" id="fTime" value="${esc(initialTime)}" /></label>
       </div>
@@ -1452,7 +1549,7 @@ function openTxForm({ tx = null, tipe = "Pengeluaran" } = {}) {
         setFormError(form, err.message);
       }
     });
-  });
+  }, { wide: true });
 }
 
 // ---------------- Form transfer ----------------
@@ -2221,8 +2318,65 @@ async function promptInstall() {
 
 // ---------------- Status & loader ----------------
 function showLoader(b) { document.getElementById("loader").classList.toggle("hidden", !b); }
-function setStatus(s) { document.getElementById("status").textContent = s; }
-function setSyncing(b) { document.getElementById("refreshBtn").classList.toggle("spin", b); }
+function setStatus(s) {
+  document.getElementById("status").textContent = s;
+  const side = document.getElementById("sideStatus");
+  if (side) side.textContent = s;
+}
+function setSyncing(b) {
+  document.getElementById("refreshBtn").classList.toggle("spin", b);
+  const side = document.getElementById("sideRefreshBtn");
+  if (side) side.classList.toggle("spin", b);
+}
+
+function toggleHide() {
+  state.hide = !state.hide;
+  localStorage.setItem(LS_HIDE, state.hide ? "1" : "0");
+  render();
+}
+
+// ---------------- Layar penuh (PC) ----------------
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => toast("Browser menolak layar penuh. Coba tekan F11.", "error"));
+  } else {
+    toast("Tekan F11 untuk layar penuh.");
+  }
+}
+function updateFullscreenBtn() {
+  const on = !!document.fullscreenElement;
+  const btn = document.getElementById("fullscreenBtn");
+  if (btn) {
+    btn.innerHTML = `<svg class="ico"><use href="#${on ? "i-shrink" : "i-expand"}"/></svg>`;
+    btn.title = on ? "Keluar layar penuh (F)" : "Layar penuh (F)";
+    btn.setAttribute("aria-label", btn.title);
+  }
+  if (state.page === "settings") renderSettings();
+}
+
+// ---------------- Pintasan keyboard (PC) ----------------
+function handleKeyboardShortcut(e) {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (sheetOpen || !document.getElementById("confirm").classList.contains("hidden")) return;
+  if (!state.url || document.getElementById("app").classList.contains("hidden")) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  const k = e.key.toLowerCase();
+  const pages = ["home", "history", "stats", "money", "settings"];
+  if (k === "n") { e.preventDefault(); openAddMenu(); }
+  else if (k === "r") { e.preventDefault(); loadAll(); }
+  else if (k === "f") { e.preventDefault(); toggleFullscreen(); }
+  else if (k === "/") {
+    e.preventDefault();
+    if (state.page !== "home" && state.page !== "history") goTo("history");
+    setTimeout(() => {
+      const input = document.getElementById(state.page === "home" ? "homeSearch" : "histSearch");
+      if (input) input.focus();
+    }, 60);
+  } else if (/^[1-5]$/.test(k)) { e.preventDefault(); goTo(pages[Number(k) - 1]); }
+}
 function updateOnline() {
   document.getElementById("offlineBar").classList.toggle("hidden", navigator.onLine !== false);
 }
@@ -2316,6 +2470,11 @@ function showPage(page) {
     b.classList.toggle("active", b.dataset.tab === tab);
     if (b.dataset.tab === tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
+  // Sidebar PC punya menu Riwayat sendiri, jadi cocokkan persis dengan halaman
+  document.querySelectorAll(".side-link").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === page);
+    if (b.dataset.tab === page) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   document.getElementById("downloadMenu").classList.add("hidden");
   window.scrollTo(0, 0);
   renderPage(page);
@@ -2366,11 +2525,7 @@ function bindEvents() {
 
   // Header & navigasi
   document.getElementById("refreshBtn").addEventListener("click", () => loadAll());
-  document.getElementById("hideBtn").addEventListener("click", () => {
-    state.hide = !state.hide;
-    localStorage.setItem(LS_HIDE, state.hide ? "1" : "0");
-    render();
-  });
+  document.getElementById("hideBtn").addEventListener("click", toggleHide);
   document.getElementById("editAccountsBtn").addEventListener("click", () => {
     state.editAccounts = !state.editAccounts;
     renderAccounts();
@@ -2388,10 +2543,11 @@ function bindEvents() {
     if (!target.closest("#downloadMenu") && !target.closest("#downloadBtn")) {
       document.getElementById("downloadMenu").classList.add("hidden");
     }
-    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-filter-kind],[data-month],[data-budget-month],[data-move-account],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran]");
+    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-filter-kind],[data-month],[data-budget-month],[data-move-account],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-add]");
     if (!el) return;
     const d = el.dataset;
     if (d.sheetClose !== undefined) return closeSheet();
+    if (d.add) return d.add === "transfer" ? openTransferForm() : openTxForm({ tipe: d.add });
     if (d.tab) return goTo(d.tab);
     if (d.goto) return goTo(d.goto);
     if (d.tx) return openTxById(d.tx);
@@ -2425,6 +2581,8 @@ function bindEvents() {
         localStorage.setItem(LS_INSTALL_DISMISS, "1");
         return updateInstallBanner();
       case "refresh": return loadAll();
+      case "toggle-hide": return toggleHide();
+      case "fullscreen": return toggleFullscreen();
       case "history-latest": {
         const last = latestTx();
         if (last) state.month = ymOf(last.tanggal);
@@ -2439,11 +2597,18 @@ function bindEvents() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && sheetOpen && document.getElementById("confirm").classList.contains("hidden")) closeSheet();
-    if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("[data-recurring][role=button]")) {
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("[data-recurring][role=button], tr[data-tx]")) {
       e.preventDefault();
       e.target.click();
+      return;
     }
+    handleKeyboardShortcut(e);
   });
+  document.addEventListener("fullscreenchange", updateFullscreenBtn);
+  // Pindah antara tampilan HP ↔ PC (mis. jendela diperbesar) → gambar ulang tata letak
+  const onLayoutChange = () => { if (state.url) render(); };
+  if (desktopQuery.addEventListener) desktopQuery.addEventListener("change", onLayoutChange);
+  else if (desktopQuery.addListener) desktopQuery.addListener(onLayoutChange);
 
   document.addEventListener("change", (e) => {
     const t = e.target;

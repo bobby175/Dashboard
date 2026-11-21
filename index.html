@@ -82,10 +82,27 @@
         <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
         <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
         <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 2c.6 4.6 2.4 6.9 7 7.5-4.6.6-6.4 2.9-7 7.5-.6-4.6-2.4-6.9-7-7.5 4.6-.6 6.4-2.9 7-7.5z"/></symbol>
+        <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" stroke-width="3"/></symbol>
+        <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+        <symbol id="i-shrink" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></symbol>
     </svg>
 
     <!-- ============ SETUP / CONNECT ============ -->
     <div id="setup" class="setup hidden">
+      <div class="setup-layout">
+        <!-- Panel kiri, hanya tampil di layar PC -->
+        <aside class="setup-side" aria-hidden="true">
+            <img src="icons/icon.svg" alt="" width="96" height="96" class="setup-side-logo" />
+            <h2>Catat Keuangan untuk PC ✨</h2>
+            <p>Lihat & kelola keuanganmu di layar besar. Data tetap sinkron dengan aplikasi di HP.</p>
+            <ul class="setup-points">
+                <li><span>📊</span>Dashboard lebar: saldo, akun, grafik, dan budget sekaligus</li>
+                <li><span>🧾</span>Riwayat transaksi dalam tabel yang mudah dibaca</li>
+                <li><span>⌨️</span>Pintasan keyboard: <kbd>N</kbd> catat, <kbd>/</kbd> cari, <kbd>1</kbd>–<kbd>5</kbd> pindah halaman</li>
+                <li><span>🖥️</span>Mode layar penuh & bisa di-install di Windows</li>
+            </ul>
+        </aside>
+        <div class="setup-main">
         <div class="setup-card">
             <div class="setup-hero">
                 <span class="sparkle s1" aria-hidden="true">✦</span>
@@ -134,10 +151,45 @@
             <div id="setupMsg" class="setup-msg" role="status"></div>
         </div>
         <p class="setup-foot">🔒 Konfigurasi hanya disimpan di browser ini. Tidak dikirim ke pihak ketiga.</p>
+        </div>
+      </div>
     </div>
 
     <!-- ============ APP ============ -->
     <div id="app" class="app hidden">
+        <!-- Sidebar untuk layar PC (≥ 1024px). Di HP diganti navigasi bawah. -->
+        <aside class="sidebar" aria-label="Navigasi utama (PC)">
+            <div class="side-brand">
+                <img src="icons/icon.svg" alt="" width="44" height="44" />
+                <div><b>Catat Keuangan</b><span>Versi PC</span></div>
+            </div>
+            <button class="btn btn-primary btn-block side-add" type="button" data-action="add">
+                <svg class="ico"><use href="#i-plus"/></svg>Catat Transaksi <kbd>N</kbd>
+            </button>
+            <nav class="side-nav">
+                <button class="side-link" type="button" data-tab="home"><svg class="ico"><use href="#i-home"/></svg><span>Home</span><kbd>1</kbd></button>
+                <button class="side-link" type="button" data-tab="history"><svg class="ico"><use href="#i-list"/></svg><span>Riwayat</span><kbd>2</kbd></button>
+                <button class="side-link" type="button" data-tab="stats"><svg class="ico"><use href="#i-chart"/></svg><span>Statistik</span><kbd>3</kbd></button>
+                <button class="side-link" type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg><span>Money</span><kbd>4</kbd></button>
+                <button class="side-link" type="button" data-tab="settings"><svg class="ico"><use href="#i-gear"/></svg><span>Pengaturan</span><kbd>5</kbd></button>
+            </nav>
+            <div class="side-quick">
+                <span class="side-label">Catat cepat</span>
+                <button class="side-quick-btn" type="button" data-add="Pengeluaran">🛍️ Pengeluaran</button>
+                <button class="side-quick-btn" type="button" data-add="Pemasukan">💰 Pemasukan</button>
+                <button class="side-quick-btn" type="button" data-add="transfer">🔁 Pindah saldo</button>
+            </div>
+            <div class="side-foot">
+                <div class="side-status" id="sideStatus" aria-live="polite"></div>
+                <div class="side-tools">
+                    <button class="icon-btn" type="button" data-action="toggle-hide" id="sideHideBtn" title="Sembunyikan saldo" aria-label="Sembunyikan saldo"><svg class="ico"><use href="#i-eye"/></svg></button>
+                    <button class="icon-btn" type="button" data-action="refresh" id="sideRefreshBtn" title="Sinkronkan (R)" aria-label="Sinkronkan"><svg class="ico"><use href="#i-refresh"/></svg></button>
+                    <button class="icon-btn" type="button" data-action="fullscreen" id="fullscreenBtn" title="Layar penuh (F)" aria-label="Layar penuh"><svg class="ico"><use href="#i-expand"/></svg></button>
+                </div>
+                <div class="side-keys"><kbd>N</kbd> catat · <kbd>/</kbd> cari · <kbd>R</kbd> sync · <kbd>F</kbd> layar penuh</div>
+            </div>
+        </aside>
+
         <div id="offlineBar" class="offline-bar hidden" role="status">
             📴 Kamu sedang offline — menampilkan data terakhir. Perubahan bisa disimpan lagi saat online.
         </div>
@@ -180,7 +232,7 @@
                 <div class="hero-status" id="status" aria-live="polite"></div>
             </header>
 
-            <div class="page-body">
+            <div class="page-body home-body">
                 <div id="installBanner" class="install-banner hidden">
                     <span class="install-emoji" aria-hidden="true">📲</span>
                     <div class="install-text">
@@ -193,7 +245,7 @@
                     </button>
                 </div>
 
-                <section class="block">
+                <section class="block home-accounts">
                     <div class="block-head">
                         <h2>💳 Akun</h2>
                         <button class="link-btn" id="editAccountsBtn" type="button">Atur urutan</button>
@@ -201,7 +253,7 @@
                     <div class="accounts" id="accounts"></div>
                 </section>
 
-                <section class="block">
+                <section class="block home-tx">
                     <div class="block-head">
                         <h2>🧾 Transaksi Bulan Ini</h2>
                         <button class="link-btn" type="button" data-goto="history">Lihat semua ›</button>
@@ -213,6 +265,9 @@
                     <div class="chips" id="homeFilters"></div>
                     <div class="tx-list" id="homeList"></div>
                 </section>
+
+                <!-- Ringkasan samping, hanya tampil di layar PC -->
+                <aside class="home-side" id="homeSide" aria-label="Ringkasan bulan ini"></aside>
             </div>
         </section>
 
@@ -264,8 +319,8 @@
                 </div>
                 <div class="hero-pills three" id="statsPills"></div>
             </header>
-            <div class="page-body grid-2">
-                <section class="card">
+            <div class="page-body grid-2 stats-grid">
+                <section class="card stats-cashflow">
                     <div class="card-head">
                         <h2>🌊 Arus Kas</h2>
                         <div class="seg seg-sm" id="granSeg">
@@ -277,7 +332,7 @@
                     <div class="chart-box"><canvas id="cashflowChart" aria-label="Grafik arus kas"></canvas></div>
                     <div class="empty hidden" id="cashflowEmpty">Belum ada data di periode ini 🌱</div>
                 </section>
-                <section class="card">
+                <section class="card stats-category">
                     <div class="card-head"><h2>🍩 Pengeluaran per Kategori</h2></div>
                     <div class="donut-wrap">
                         <div class="chart-box chart-donut"><canvas id="categoryChart" aria-label="Grafik pengeluaran per kategori"></canvas></div>
@@ -305,7 +360,7 @@
                 </div>
                 <p class="hero-sub">Atur budget, kejar goal tabungan, dan jadwalkan transaksi rutin.</p>
             </header>
-            <div class="page-body grid-2">
+            <div class="page-body grid-2 money-grid">
                 <section class="card">
                     <div class="card-head">
                         <div>
