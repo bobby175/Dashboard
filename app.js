@@ -366,7 +366,7 @@ function normalizeDebt(d) {
   const tipeRaw = String(d.tipe || "HUTANG").toUpperCase();
   const tipe = tipeRaw.includes("PIUTANG") ? "PIUTANG" : "HUTANG";
   return {
-    id: String(d.id),
+    id: String(d.id ?? "").trim(),
     tipe,
     personName: String(d.personName || "").trim(),
     amount,
@@ -381,8 +381,8 @@ function normalizeDebt(d) {
 
 function normalizeDebtPayment(p) {
   return {
-    id: String(p.id),
-    debtId: String(p.debtId || ""),
+    id: String(p.id ?? "").trim(),
+    debtId: String(p.debtId ?? "").trim(),
     tipe: String(p.tipe || "HUTANG").toUpperCase().includes("PIUTANG") ? "PIUTANG" : "HUTANG",
     personName: String(p.personName || ""),
     amount: Number(p.amount) || 0,
@@ -390,7 +390,7 @@ function normalizeDebtPayment(p) {
     jam: String(p.jam || ""),
     akun: String(p.akun || "Tunai").trim() || "Tunai",
     catatan: String(p.catatan || ""),
-    linkedTxId: p.linkedTxId ? String(p.linkedTxId) : null,
+    linkedTxId: p.linkedTxId ? String(p.linkedTxId).trim() : null,
   };
 }
 
@@ -475,7 +475,8 @@ function upsertById(list, item) {
   if (i >= 0) list[i] = item; else list.push(item);
 }
 function removeById(list, id) {
-  const i = list.findIndex((x) => x.id === id);
+  const sid = String(id ?? "").trim();
+  const i = list.findIndex((x) => String(x.id ?? "").trim() === sid);
   if (i >= 0) list.splice(i, 1);
 }
 
@@ -691,20 +692,11 @@ function renderFilterChips(elId, f, accountNames) {
 }
 
 // ---------------- Home ----------------
-/** Total semua waktu tanpa transfer — sama dengan ringkasan di Home aplikasi Android. */
-function allTimeTotals() {
-  const rows = state.transactions.filter((t) => !isTransfer(t));
-  return {
-    income: rows.filter(isIncome).reduce((a, t) => a + t.jumlah, 0),
-    expense: rows.filter(isExpense).reduce((a, t) => a + t.jumlah, 0),
-  };
-}
-
 function latestTx() { return sortTxDesc(state.transactions)[0] || null; }
 
 function renderHome() {
   const ym = currentYM();
-  const totals = allTimeTotals();
+  const totals = monthTotals(ym);
   document.getElementById("greeting").textContent = greeting();
   document.getElementById("todayLabel").textContent = longDateLabel(todayIso());
   document.getElementById("kpiBalance").textContent = fmtRp(totalBalance());
@@ -1326,7 +1318,8 @@ function renderDebts() {
             <div><b>${esc(d.personName)}</b><span class="badge ${badgeCls}">${badgeLbl}</span></div>
             <small>${esc(dateLabel(d.tanggal, true))}${d.dueDate ? " · Tempo " + esc(dateLabel(d.dueDate, true)) : ""}</small>
           </div>
-          <button class="icon-btn icon-btn-sm" type="button" data-debt-edit="${esc(d.id)}" aria-label="Edit ${esc(d.personName)}"><svg class="ico"><use href="#i-edit"/></svg></button>
+          <button class="icon-btn icon-btn-sm" type="button" data-debt-edit="${esc(d.id)}" aria-label="Edit ${esc(d.personName)}" title="Edit"><svg class="ico"><use href="#i-edit"/></svg></button>
+          <button class="icon-btn icon-btn-sm" type="button" data-debt-del="${esc(d.id)}" style="color:var(--expense)" aria-label="Hapus ${esc(d.personName)}" title="Hapus"><svg class="ico"><use href="#i-trash"/></svg></button>
         </div>
         <div class="debt-amt-row">
           <div>
@@ -1344,6 +1337,24 @@ function renderDebts() {
         </div>
       </div>`;
   }).join("");
+}
+
+async function deleteDebtWithConfirm(debt, btn, { closeAfter = false, form = null } = {}) {
+  if (!debt) return;
+  const ok = await askConfirm(`Hapus catatan dengan "${debt.personName}" beserta riwayat cicilannya?`);
+  if (!ok) return;
+  const id = String(debt.id ?? "").trim();
+  try {
+    await withBusy(btn, closeAfter ? "Menghapus..." : "...", async () => { ensureOnline(); await api.debtDelete(id); });
+    removeById(state.debts, id);
+    state.debtPayments = state.debtPayments.filter((p) => String(p.debtId ?? "").trim() !== id);
+    if (closeAfter) closeSheet();
+    toast("Catatan dihapus 🗑️");
+    commitLocal();
+  } catch (err) {
+    if (form) setFormError(form, err.message);
+    else toast(err.message, "error");
+  }
 }
 
 function openDebtForm(debt = null, defaultType = "HUTANG") {
@@ -1399,17 +1410,9 @@ function openDebtForm(debt = null, defaultType = "HUTANG") {
     }));
 
     if (isEdit) {
-      body.querySelector("#dDelete").addEventListener("click", async (e) => {
-        const ok = await askConfirm(`Hapus catatan dengan "${debt.personName}" beserta riwayat cicilannya?`);
-        if (!ok) return;
-        try {
-          await withBusy(e.currentTarget, "Menghapus...", async () => { ensureOnline(); await api.debtDelete(debt.id); });
-          removeById(state.debts, debt.id);
-          state.debtPayments = state.debtPayments.filter((p) => p.debtId !== debt.id);
-          closeSheet();
-          toast("Catatan dihapus 🗑️");
-          commitLocal();
-        } catch (err) { setFormError(form, err.message); }
+      body.querySelector("#dDelete").addEventListener("click", (e) => {
+        const btn = e.currentTarget;
+        return deleteDebtWithConfirm(debt, btn, { closeAfter: true, form });
       });
     }
 
@@ -1954,6 +1957,7 @@ function askConfirm(message, { yes = "Ya, hapus", emoji = "🗑️" } = {}) {
 }
 
 async function withBusy(btn, label, fn) {
+  if (!btn) return fn();
   const original = btn.innerHTML;
   const form = btn.closest("form") || btn.closest(".sheet-body");
   const buttons = form ? [...form.querySelectorAll("button")] : [btn];
@@ -3361,7 +3365,7 @@ function bindEvents() {
     if (!target.closest("#downloadMenu") && !target.closest("#downloadBtn")) {
       document.getElementById("downloadMenu").classList.add("hidden");
     }
-    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-add]");
+    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-debt-del],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-add]");
     if (!el) return;
     const d = el.dataset;
     if (d.sheetClose !== undefined) return closeSheet();
@@ -3376,6 +3380,7 @@ function bindEvents() {
     if (d.debtPay) { const item = state.debts.find((x) => x.id === d.debtPay); return item && openPayDebtForm(item); }
     if (d.debtHistory) return openDebtHistorySheet(d.debtHistory);
     if (d.debtEdit) { const item = state.debts.find((x) => x.id === d.debtEdit); return item && openDebtForm(item); }
+    if (d.debtDel) { const item = state.debts.find((x) => String(x.id ?? "").trim() === String(d.debtDel).trim()); return item && deleteDebtWithConfirm(item, el); }
     if (d.tab) return goTo(d.tab);
     if (d.goto) return goTo(d.goto);
     if (d.tx) return openTxById(d.tx);

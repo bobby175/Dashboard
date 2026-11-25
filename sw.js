@@ -4,7 +4,7 @@
  * - Library CDN & Google Fonts: stale-while-revalidate (cepat & tetap jalan offline).
  * - Request ke Apps Script (data keuangan) TIDAK pernah di-cache oleh service worker.
  */
-const CACHE_VERSION = "catalyst-web-v3.0.0";
+const CACHE_VERSION = "catalyst-web-v3.0.1";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const CDN_CACHE = `${CACHE_VERSION}-cdn`;
 
