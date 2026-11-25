@@ -1,10 +1,10 @@
-/* Service worker Catat Keuangan (web).
+/* Service worker Catalyst (web).
  * - App shell (HTML/CSS/JS/ikon): network-first, jatuh ke cache saat offline,
  *   supaya versi baru langsung terpakai ketika online.
  * - Library CDN & Google Fonts: stale-while-revalidate (cepat & tetap jalan offline).
  * - Request ke Apps Script (data keuangan) TIDAK pernah di-cache oleh service worker.
  */
-const CACHE_VERSION = "ck-web-v2.1.0";
+const CACHE_VERSION = "catalyst-web-v3.0.0";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const CDN_CACHE = `${CACHE_VERSION}-cdn`;
 

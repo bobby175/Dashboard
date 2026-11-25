@@ -1,6 +1,6 @@
-# Catat Keuangan — Web App (PWA)
+# Catalyst — Web App (PWA)
 
-Versi web dari aplikasi Catat Keuangan yang **bisa dipasang (install) seperti aplikasi** dan
+Versi web dari aplikasi Catalyst yang **bisa dipasang (install) seperti aplikasi** dan
 **bisa menambah / mengubah / menghapus data**, tersinkron dengan aplikasi Android karena memakai
 backend yang sama: Google Apps Script Web App + Spreadsheet.
 
@@ -9,9 +9,9 @@ Tampilannya memakai tema "Candy Pastel" yang sama dengan aplikasi HP (terang / g
 
 ## Cara pakai
 
-1. Buka web-nya (mis. `https://dashboard-catat-keuangan.vercel.app/`, atau host sendiri, lihat di bawah).
+1. Buka web-nya (mis. URL hosting statis kamu, atau jalankan lokal).
 2. Hubungkan dengan salah satu cara:
-   - **File** — pakai file `catat-keuangan-config-*.json` yang diekspor dari aplikasi
+   - **File** — pakai file `catalyst-config-*.json` yang diekspor dari aplikasi
      (Pengaturan → Backup & Pindah → Bagikan). Paling mudah.
    - **Tempel** — salin isi file config lalu tempel.
    - **Manual** — isi URL Web App + Webhook Secret sendiri.
@@ -49,8 +49,9 @@ Shortcut ikon (tekan lama ikon aplikasi di Android): *Catat Pengeluaran*, *Catat
 
 ### Yang sengaja tidak ada di web
 
-Scan struk (kamera + Gemini), tangkap notifikasi / layar, scan & tampilkan QR, kunci PIN/biometrik,
-pengingat harian, backup Google Drive, dan pengaturan bot Telegram. Semua itu tetap di aplikasi HP.
+Scan struk & bukti transfer (kamera/screenshot + Gemini), scan & tampilkan QR, kunci PIN/biometrik,
+pengingat harian, notifikasi pencatatan berhasil, backup Google Drive, dan pengaturan bot Telegram.
+Semua itu tetap di aplikasi HP.
 
 ## Cara sinkron bekerja
 

@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Catat Keuangan</title>
-    <meta name="description" content="Catat pemasukan, pengeluaran, transfer, budget, dan goal tabungan. Sinkron dengan aplikasi Catat Keuangan di HP." />
+    <title>Catalyst</title>
+    <meta name="description" content="Catat pemasukan, pengeluaran, transfer, hutang & cicilan, budget, dan goal tabungan. Sinkron dengan aplikasi Catalyst di HP." />
     <meta name="theme-color" content="#D63F86" id="metaThemeColor" />
     <meta name="color-scheme" content="light dark" />
     <link rel="manifest" href="manifest.webmanifest" />
@@ -13,7 +13,7 @@
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Catat Keuangan" />
+    <meta name="apple-mobile-web-app-title" content="Catalyst" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <script>
         // Terapkan tema sebelum halaman digambar supaya tidak berkedip.
@@ -93,13 +93,13 @@
         <!-- Panel kiri, hanya tampil di layar PC -->
         <aside class="setup-side" aria-hidden="true">
             <img src="icons/icon.svg" alt="" width="96" height="96" class="setup-side-logo" />
-            <h2>Catat Keuangan untuk PC ✨</h2>
-            <p>Lihat & kelola keuanganmu di layar besar. Data tetap sinkron dengan aplikasi di HP.</p>
+            <h2>Catalyst untuk PC ✨</h2>
+            <p>Lihat &amp; kelola keuanganmu di layar besar. Data tetap sinkron dengan aplikasi di HP.</p>
             <ul class="setup-points">
-                <li><span>📊</span>Dashboard lebar: saldo, akun, grafik, dan budget sekaligus</li>
+                <li><span>📊</span>Dashboard lebar: saldo, akun, grafik, hutang, dan budget sekaligus</li>
                 <li><span>🧾</span>Riwayat transaksi dalam tabel yang mudah dibaca</li>
                 <li><span>⌨️</span>Pintasan keyboard: <kbd>N</kbd> catat, <kbd>/</kbd> cari, <kbd>1</kbd>–<kbd>5</kbd> pindah halaman</li>
-                <li><span>🖥️</span>Mode layar penuh & bisa di-install di Windows</li>
+                <li><span>🖥️</span>Mode layar penuh &amp; bisa di-install di Windows</li>
             </ul>
         </aside>
         <div class="setup-main">
@@ -108,7 +108,7 @@
                 <span class="sparkle s1" aria-hidden="true">✦</span>
                 <span class="sparkle s2" aria-hidden="true">✦</span>
                 <img src="icons/icon.svg" class="setup-logo" alt="" width="76" height="76" />
-                <h1>Catat Keuangan</h1>
+                <h1>Catalyst</h1>
                 <p>Catat &amp; pantau uangmu dari mana saja ✨</p>
             </div>
             <p class="setup-desc">
@@ -126,7 +126,7 @@
                 <label class="dropzone" id="dropzone">
                     <input type="file" id="fileInput" accept="application/json,.json,text/plain" hidden />
                     <span class="dz-icon" aria-hidden="true">🗂️</span>
-                    <span class="dz-text">Klik untuk pilih file <b>catat-keuangan-config-*.json</b></span>
+                    <span class="dz-text">Klik untuk pilih file <b>catalyst-config-*.json</b></span>
                     <span class="dz-sub">atau seret &amp; lepas file ke sini</span>
                 </label>
             </div>
@@ -161,7 +161,7 @@
         <aside class="sidebar" aria-label="Navigasi utama (PC)">
             <div class="side-brand">
                 <img src="icons/icon.svg" alt="" width="44" height="44" />
-                <div><b>Catat Keuangan</b><span>Versi PC</span></div>
+                <div><b>Catalyst</b><span>Versi PC</span></div>
             </div>
             <button class="btn btn-primary btn-block side-add" type="button" data-action="add">
                 <svg class="ico"><use href="#i-plus"/></svg>Catat Transaksi <kbd>N</kbd>
@@ -175,6 +175,7 @@
             </nav>
             <div class="side-quick">
                 <span class="side-label">Catat cepat</span>
+                <button class="side-quick-btn" type="button" data-add="voice">🎙️ Suara AI / Cepat</button>
                 <button class="side-quick-btn" type="button" data-add="Pengeluaran">🛍️ Pengeluaran</button>
                 <button class="side-quick-btn" type="button" data-add="Pemasukan">💰 Pemasukan</button>
                 <button class="side-quick-btn" type="button" data-add="transfer">🔁 Pindah saldo</button>
@@ -236,7 +237,7 @@
                 <div id="installBanner" class="install-banner hidden">
                     <span class="install-emoji" aria-hidden="true">📲</span>
                     <div class="install-text">
-                        <b>Pasang Catat Keuangan</b>
+                        <b>Pasang Catalyst</b>
                         <span>Buka langsung dari layar utama, seperti aplikasi.</span>
                     </div>
                     <button class="btn btn-primary btn-sm" type="button" data-action="install">Pasang</button>
@@ -247,8 +248,8 @@
 
                 <section class="block home-accounts">
                     <div class="block-head">
-                        <h2>💳 Akun</h2>
-                        <button class="link-btn" id="editAccountsBtn" type="button">Atur urutan</button>
+                        <h2>💳 Dompet &amp; Akun</h2>
+                        <button class="pill-link-btn" id="openWalletsBtn" type="button">Semua ›</button>
                     </div>
                     <div class="accounts" id="accounts"></div>
                 </section>
@@ -358,9 +359,21 @@
                 <div class="hero-title-row">
                     <h1>👛 Money</h1>
                 </div>
-                <p class="hero-sub">Atur budget, kejar goal tabungan, dan jadwalkan transaksi rutin.</p>
+                <p class="hero-sub">Kelola hutang &amp; cicilan, budget bulanan, goal tabungan, dan jadwal rutin.</p>
             </header>
             <div class="page-body grid-2 money-grid">
+                <section class="card span-2">
+                    <div class="card-head">
+                        <div>
+                            <h2>🤝 Hutang &amp; Piutang</h2>
+                            <p class="card-sub">Bisa dicicil &amp; pantau riwayat pembayaran lengkap per tanggal.</p>
+                        </div>
+                        <button class="btn btn-soft btn-sm" type="button" data-action="add-debt"><svg class="ico"><use href="#i-plus"/></svg>Catat</button>
+                    </div>
+                    <div id="debtSummaryTiles" class="debt-tiles"></div>
+                    <div id="debtControls" class="debt-controls"></div>
+                    <div id="debtList" class="debt-list"></div>
+                </section>
                 <section class="card">
                     <div class="card-head">
                         <div>

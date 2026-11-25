@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "Catat Keuangan",
-  "short_name": "Catat Keuangan",
-  "description": "Catat pemasukan, pengeluaran, transfer, budget, dan goal tabungan. Sinkron dengan aplikasi Catat Keuangan di HP.",
+  "name": "Catalyst",
+  "short_name": "Catalyst",
+  "description": "Catat pemasukan, pengeluaran, transfer, hutang & cicilan, budget, dan goal tabungan. Sinkron dengan aplikasi Catalyst di HP.",
   "lang": "id",
   "dir": "ltr",
   "start_url": "./?sumber=pwa",
@@ -19,6 +19,12 @@
     { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ],
   "shortcuts": [
+    {
+      "name": "Catat Suara",
+      "short_name": "Suara AI",
+      "url": "./?aksi=suara",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
     {
       "name": "Catat Pengeluaran",
       "short_name": "Pengeluaran",

@@ -1,17 +1,17 @@
-/* Catat Keuangan — Web App (PWA)
+/* Catalyst — Web App (PWA)
  *
  * Sinkron dua arah dengan aplikasi Android lewat backend yang sama (Apps Script Web App
  * + Webhook Secret). Bisa dipasang seperti aplikasi dan dipakai untuk menambah / mengubah /
- * menghapus transaksi, transfer, budget, goal tabungan, dan transaksi berulang.
+ * menghapus transaksi, transfer, hutang & cicilan, budget, goal tabungan, dan transaksi berulang.
  *
- * Fitur khusus HP (scan struk, tangkap notifikasi/layar, QR, kunci PIN) sengaja tidak ada.
- * Eksekusi transaksi berulang & auto-debit goal tetap dilakukan aplikasi HP supaya tidak dobel.
+ * Scan foto struk kamera tetap khusus di aplikasi HP; web menyediakan Catat Suara / Kalimat Cepat,
+ * Dompet Terkelompok, serta manajemen Hutang & Riwayat Cicilan penuh.
  *
  * Tidak ada server sendiri: semua request langsung ke URL Apps Script milik pengguna.
  */
 "use strict";
 
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "3.0.0";
 
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
@@ -37,24 +37,31 @@ const CATEGORY_STYLES = {
   Bonus: { emoji: "🎁", c: "#CA8A04", bg: "#FEF9C3" },
   Lainnya: { emoji: "✨", c: "#A04FD6", bg: "#F3E8FF" },
   Transfer: { emoji: "🔁", c: "#8E5BD8", bg: "#EFE4FF" },
+  Hutang: { emoji: "🤝", c: "#E11D48", bg: "#FFE4E6" },
+  Piutang: { emoji: "🤝", c: "#047857", bg: "#D1FAE5" },
 };
 
 const DEFAULT_ACCOUNT_ORDER = ["Tunai", "DANA", "GoPay", "OVO", "ShopeePay", "BCA", "Mandiri", "BRI", "BNI", "Kartu Kredit", "Lainnya"];
 const ACCOUNT_STYLES = {
-  Tunai: { emoji: "💵", from: "#16A34A", to: "#15803D", c: "#15803D", bg: "#DCFCE7" },
-  DANA: { emoji: "📱", from: "#3B82F6", to: "#1D4ED8", c: "#1D4ED8", bg: "#DBEAFE" },
-  GoPay: { emoji: "📱", from: "#06B6D4", to: "#0E7490", c: "#0E7490", bg: "#CFFAFE" },
-  OVO: { emoji: "📱", from: "#8B5CF6", to: "#6D28D9", c: "#6D28D9", bg: "#EDE9FE" },
-  ShopeePay: { emoji: "📱", from: "#F97316", to: "#C2410C", c: "#C2410C", bg: "#FFEDD5" },
-  BCA: { emoji: "🏦", from: "#2563EB", to: "#1E40AF", c: "#1E40AF", bg: "#DBEAFE" },
-  Mandiri: { emoji: "🏦", from: "#14B8A6", to: "#0F766E", c: "#0F766E", bg: "#CCFBF1" },
-  BRI: { emoji: "🏦", from: "#1E40AF", to: "#1E3A8A", c: "#1E3A8A", bg: "#DBEAFE" },
-  BNI: { emoji: "🏦", from: "#F59E0B", to: "#B45309", c: "#B45309", bg: "#FEF3C7" },
-  "Kartu Kredit": { emoji: "💳", from: "#F43F5E", to: "#BE123C", c: "#BE123C", bg: "#FFE4E6" },
-  Lainnya: { emoji: "👛", from: "#64748B", to: "#334155", c: "#475569", bg: "#E2E8F0" },
+  Tunai: { emoji: "💵", from: "#16A34A", to: "#15803D", c: "#15803D", bg: "#DCFCE7", group: "OTHER", catLabel: "Tunai" },
+  DANA: { emoji: "📱", from: "#3B82F6", to: "#1D4ED8", c: "#1D4ED8", bg: "#DBEAFE", group: "EWALLET", catLabel: "E-Wallet" },
+  GoPay: { emoji: "📱", from: "#06B6D4", to: "#0E7490", c: "#0E7490", bg: "#CFFAFE", group: "EWALLET", catLabel: "E-Wallet" },
+  OVO: { emoji: "📱", from: "#8B5CF6", to: "#6D28D9", c: "#6D28D9", bg: "#EDE9FE", group: "EWALLET", catLabel: "E-Wallet" },
+  ShopeePay: { emoji: "📱", from: "#F97316", to: "#C2410C", c: "#C2410C", bg: "#FFEDD5", group: "EWALLET", catLabel: "E-Wallet" },
+  BCA: { emoji: "🏦", from: "#2563EB", to: "#1E40AF", c: "#1E40AF", bg: "#DBEAFE", group: "BANK", catLabel: "Bank" },
+  Mandiri: { emoji: "🏦", from: "#14B8A6", to: "#0F766E", c: "#0F766E", bg: "#CCFBF1", group: "BANK", catLabel: "Bank" },
+  BRI: { emoji: "🏦", from: "#1E40AF", to: "#1E3A8A", c: "#1E3A8A", bg: "#DBEAFE", group: "BANK", catLabel: "Bank" },
+  BNI: { emoji: "🏦", from: "#F59E0B", to: "#B45309", c: "#B45309", bg: "#FEF3C7", group: "BANK", catLabel: "Bank" },
+  "Kartu Kredit": { emoji: "💳", from: "#F43F5E", to: "#BE123C", c: "#BE123C", bg: "#FFE4E6", group: "OTHER", catLabel: "Kartu" },
+  Lainnya: { emoji: "👛", from: "#64748B", to: "#334155", c: "#475569", bg: "#E2E8F0", group: "OTHER", catLabel: "Lainnya" },
+};
+const ACCOUNT_GROUP_META = {
+  BANK: { title: "Rekening Bank", tabLabel: "Bank" },
+  EWALLET: { title: "E-Wallet", tabLabel: "E-Wallet" },
+  OTHER: { title: "Tunai & Lainnya", tabLabel: "Tunai" },
 };
 // Akun tabungan goal memakai ikon toples tabungan (bukan celengan babi)
-const GOAL_ACCOUNT_STYLE = { emoji: "💰", svg: "i-jar", from: "#EC4899", to: "#A04FD6", c: "#C9367A", bg: "#FFE3F0" };
+const GOAL_ACCOUNT_STYLE = { emoji: "💰", svg: "i-jar", from: "#EC4899", to: "#A04FD6", c: "#C9367A", bg: "#FFE3F0", group: "OTHER", catLabel: "Tabungan" };
 const JAR_ICON = `<svg class="art" aria-hidden="true"><use href="#i-jar"/></svg>`;
 
 const FREQ_LABEL = { DAILY: "Harian", WEEKLY: "Mingguan", MONTHLY: "Bulanan", YEARLY: "Tahunan" };
@@ -70,6 +77,10 @@ const state = {
   budgets: [],
   goals: [],
   recurring: [],
+  debts: [],
+  debtPayments: [],
+  debtTab: "HUTANG",
+  debtFilter: "ALL",
   loadedAt: 0,
   loading: false,
   page: "home",
@@ -79,7 +90,6 @@ const state = {
   home: { tipe: null, akun: null, q: "" },
   hist: { tipe: null, akun: null, q: "" },
   hide: localStorage.getItem(LS_HIDE) === "1",
-  editAccounts: false,
   theme: localStorage.getItem(LS_THEME) || "system",
   notify: localStorage.getItem(LS_NOTIFY) !== "0",
 };
@@ -309,6 +319,10 @@ const api = {
   goalDelete: (id) => callApi("goalDelete", { id }),
   recurringUpsert: (r) => callApi("recurringUpsert", { recurring: r }),
   recurringDelete: (id) => callApi("recurringDelete", { id }),
+  debtUpsert: (d) => callApi("debtUpsert", { debt: d }),
+  debtDelete: (id) => callApi("debtDelete", { id }),
+  debtPaymentUpsert: (p) => callApi("debtPaymentUpsert", { payment: p }),
+  debtPaymentDelete: (id) => callApi("debtPaymentDelete", { id }),
 };
 
 // ---------------- Data ----------------
@@ -316,13 +330,15 @@ async function loadDashboardData() {
   const combined = await safe(() => callApi("dashboardData"), null);
   if (combined) return combined;
 
-  const [tx, budgets, goals, recurring] = await Promise.all([
+  const [tx, budgets, goals, recurring, debts, debtPayments] = await Promise.all([
     callApi("list"),
     safe(() => callApi("budgetList").then((r) => r.budgets || []), []),
     safe(() => callApi("goalList").then((r) => r.goals || []), []),
     safe(() => callApi("recurringList").then((r) => r.recurring || []), []),
+    safe(() => callApi("debtList").then((r) => r.debts || []), []),
+    safe(() => callApi("debtPaymentList").then((r) => r.payments || []), []),
   ]);
-  return { transactions: tx.transactions || [], budgets, goals, recurring };
+  return { transactions: tx.transactions || [], budgets, goals, recurring, debts, debtPayments };
 }
 
 async function safe(fn, fallback) {
@@ -344,18 +360,55 @@ function normalizeTx(t) {
   };
 }
 
+function normalizeDebt(d) {
+  const amount = Number(d.amount) || 0;
+  const paidAmount = Number(d.paidAmount) || 0;
+  const tipeRaw = String(d.tipe || "HUTANG").toUpperCase();
+  const tipe = tipeRaw.includes("PIUTANG") ? "PIUTANG" : "HUTANG";
+  return {
+    id: String(d.id),
+    tipe,
+    personName: String(d.personName || "").trim(),
+    amount,
+    paidAmount,
+    tanggal: String(d.tanggal || todayIso()),
+    dueDate: String(d.dueDate || ""),
+    akun: String(d.akun || "Tunai").trim() || "Tunai",
+    catatan: String(d.catatan || ""),
+    settled: d.settled === true || (amount > 0 && paidAmount >= amount - 0.01),
+  };
+}
+
+function normalizeDebtPayment(p) {
+  return {
+    id: String(p.id),
+    debtId: String(p.debtId || ""),
+    tipe: String(p.tipe || "HUTANG").toUpperCase().includes("PIUTANG") ? "PIUTANG" : "HUTANG",
+    personName: String(p.personName || ""),
+    amount: Number(p.amount) || 0,
+    tanggal: String(p.tanggal || todayIso()),
+    jam: String(p.jam || ""),
+    akun: String(p.akun || "Tunai").trim() || "Tunai",
+    catatan: String(p.catatan || ""),
+    linkedTxId: p.linkedTxId ? String(p.linkedTxId) : null,
+  };
+}
+
 function applyData(data) {
   state.transactions = (data.transactions || []).filter((t) => t && t.id).map(normalizeTx);
   state.budgets = (data.budgets || []).filter((b) => b && b.id);
   state.goals = (data.goals || []).filter((g) => g && g.id);
   state.recurring = (data.recurring || []).filter((r) => r && r.id);
+  state.debts = (data.debts || []).filter((d) => d && d.id).map(normalizeDebt);
+  state.debtPayments = (data.debtPayments || []).filter((p) => p && p.id && p.debtId).map(normalizeDebtPayment);
 }
 
 function saveCache() {
   try {
     localStorage.setItem(LS_CACHE, JSON.stringify({
-      v: 1, at: Date.now(), url: state.url,
+      v: 2, at: Date.now(), url: state.url,
       transactions: state.transactions, budgets: state.budgets, goals: state.goals, recurring: state.recurring,
+      debts: state.debts, debtPayments: state.debtPayments,
     }));
   } catch (e) { /* kuota penuh → abaikan, data tetap ada di memori */ }
 }
@@ -363,7 +416,7 @@ function saveCache() {
 function loadCache() {
   try {
     const c = JSON.parse(localStorage.getItem(LS_CACHE) || "null");
-    if (c && c.v === 1 && c.url === state.url) return c;
+    if (c && (c.v === 1 || c.v === 2) && c.url === state.url) return c;
   } catch (e) { /* cache rusak → abaikan */ }
   return null;
 }
@@ -749,49 +802,208 @@ function renderHomeSide() {
             <div><span>${esc(dateLabel(next))} · ${esc(r.merchant || r.kategori)}</span><b class="${sameText(r.tipe, "Pemasukan") ? "amt-in" : "amt-out"}">${esc(fmtRp(r.jumlah))}</b></div>
           </div>`).join("")
         : `<p class="side-empty">Belum ada transaksi berulang aktif.</p>`}
-    </section>`;
+    </section>
+    ${(() => {
+      const hList = state.debts.filter((d) => !d.settled && d.tipe === "HUTANG");
+      const pList = state.debts.filter((d) => !d.settled && d.tipe === "PIUTANG");
+      const hSum = hList.reduce((s, d) => s + Math.max(0, d.amount - d.paidAmount), 0);
+      const pSum = pList.reduce((s, d) => s + Math.max(0, d.amount - d.paidAmount), 0);
+      return `
+        <section class="card side-card">
+          <div class="card-head"><h2>🤝 Hutang &amp; Piutang</h2><button class="link-btn" type="button" data-goto="money">Kelola ›</button></div>
+          <div class="mini-stats">
+            <div><span>Hutang Saya (${hList.length})</span><b class="amt-out">${esc(fmtRp(hSum))}</b></div>
+            <div><span>Hutang Orang (${pList.length})</span><b class="amt-in">${esc(fmtRp(pSum))}</b></div>
+          </div>
+        </section>`;
+    })()}`;
 }
 
 function renderAccounts() {
   const map = accountBalances();
   const el = document.getElementById("accounts");
-  const editBtn = document.getElementById("editAccountsBtn");
-  const names = sortAccounts(Object.keys(map).filter((name) => Math.round(map[name]) !== 0));
-  editBtn.textContent = state.editAccounts ? "Selesai ✓" : "Atur urutan";
-  editBtn.classList.toggle("hidden", names.length < 2 && !state.editAccounts);
-  if (names.length === 0) {
-    el.innerHTML = `<div class="muted" style="padding:6px 2px;font-weight:700">Belum ada saldo akun. Catat pemasukan pertama kamu ✨</div>`;
-    return;
-  }
-  el.innerHTML = names.map((name, i) => {
+  const openBtn = document.getElementById("openWalletsBtn");
+  const orderedAll = allAccountNames();
+  const nonZero = sortAccounts(Object.keys(map).filter((name) => Math.round(map[name]) !== 0));
+  const shown = nonZero.length > 0 ? nonZero : orderedAll;
+  const totalPos = shown.reduce((s, n) => s + Math.max(0, Number(map[n]) || 0), 0);
+
+  if (openBtn) openBtn.textContent = `Semua (${orderedAll.length}) ›`;
+
+  el.innerHTML = shown.map((name) => {
+    const val = Number(map[name]) || 0;
     const s = accountStyle(name);
+    const ratio = val > 0 && totalPos > 0 ? clamp((val / totalPos) * 100, 3, 100) : 0;
     return `
-      <div class="acct" style="--from:${s.from};--to:${s.to}" data-account="${esc(name)}">
+      <button class="acct" style="${acctVars(name)}" type="button" data-open-wallet="${esc(name)}">
         <div class="acct-top">
           <span class="acct-badge" aria-hidden="true">${s.svg ? JAR_ICON : s.emoji}</span>
-          <span class="acct-name">${esc(name)}</span>
+          <span class="acct-cat">${esc(s.catLabel || "Lainnya")}</span>
         </div>
-        <div class="acct-sub">Saldo</div>
-        <div class="acct-val">${esc(fmtRp(map[name]))}</div>
-        ${state.editAccounts ? `
-          <div class="acct-move">
-            <button type="button" data-move-account="-1" data-name="${esc(name)}" ${i === 0 ? "disabled" : ""} aria-label="Geser ${esc(name)} ke kiri">‹</button>
-            <button type="button" data-move-account="1" data-name="${esc(name)}" ${i === names.length - 1 ? "disabled" : ""} aria-label="Geser ${esc(name)} ke kanan">›</button>
-          </div>` : ""}
-      </div>`;
+        <div class="acct-name">${esc(name)}</div>
+        <div class="acct-val ${val < 0 ? "neg" : ""}">${esc(fmtRp(val))}</div>
+        <div class="acct-bar"><span style="width:${ratio.toFixed(1)}%"></span></div>
+      </button>`;
   }).join("");
 }
 
-function moveAccount(name, delta) {
+function openWalletSheet(initialAccount = null) {
   const map = accountBalances();
-  const current = sortAccounts(Object.keys(map).filter((n) => Math.round(map[n]) !== 0));
-  const from = current.indexOf(name);
-  const to = from + delta;
-  if (from < 0 || to < 0 || to >= current.length) return;
-  const [moved] = current.splice(from, 1);
-  current.splice(to, 0, moved);
-  saveAccountOrder(current);
-  renderAccounts();
+  const ordered = allAccountNames().map((name) => {
+    const style = accountStyle(name);
+    return {
+      name,
+      saldo: Number(map[name]) || 0,
+      style,
+      group: style.group || "OTHER",
+    };
+  });
+  const totalPos = ordered.reduce((s, x) => s + (x.saldo > 0 ? x.saldo : 0), 0);
+  const initialIsZero = initialAccount
+    ? Math.abs(ordered.find((x) => sameText(x.name, initialAccount))?.saldo || 0) <= 0.01
+    : false;
+  const ws = {
+    filter: "ALL",
+    hideZero: !initialIsZero && ordered.some((x) => Math.abs(x.saldo) > 0.01),
+    expanded: initialAccount,
+  };
+
+  const renderSheetContent = (body) => {
+    const visible = ordered.filter((x) => {
+      const matchGroup = ws.filter === "ALL" || x.group === ws.filter;
+      const matchBal = !ws.hideZero || Math.abs(x.saldo) > 0.01;
+      return matchGroup && matchBal;
+    });
+    const groups = ["BANK", "EWALLET", "OTHER"]
+      .filter((g) => ws.filter === "ALL" || ws.filter === g)
+      .map((g) => ({ key: g, meta: ACCOUNT_GROUP_META[g], items: visible.filter((x) => x.group === g) }))
+      .filter((g) => g.items.length > 0);
+
+    const groupsHtml = groups.length === 0
+      ? `<div class="empty"><span class="empty-emoji">👛</span>Semua akun pada filter ini bersaldo Rp 0.${ws.hideZero ? `<br><button class="btn btn-soft btn-sm" type="button" id="wsShowZeroBtn">Tampilkan Akun Rp 0</button>` : ""}</div>`
+      : groups.map((g) => {
+          const gSum = g.items.reduce((s, x) => s + x.saldo, 0);
+          return `
+            <div class="wallet-group-hdr">
+              <span>${esc(g.meta.title)}</span>
+              <b>${esc(fmtRp(gSum))}</b>
+            </div>
+            ${g.items.map((it) => {
+              const exp = ws.expanded && sameText(ws.expanded, it.name);
+              const pct = it.saldo > 0 && totalPos > 0 ? Math.round((it.saldo / totalPos) * 100) : 0;
+              const barW = it.saldo > 0 && totalPos > 0 ? clamp((it.saldo / totalPos) * 100, 2, 100) : 0;
+              return `
+                <div class="wallet-row ${exp ? "expanded" : ""}" style="${acctVars(it.name)}">
+                  <div class="wallet-row-main" data-ws-toggle="${esc(it.name)}">
+                    <span class="acct-badge" aria-hidden="true">${it.style.svg ? JAR_ICON : it.style.emoji}</span>
+                    <div class="wallet-row-info">
+                      <div class="wallet-row-title">
+                        <span>${esc(it.name)}</span>
+                        ${it.saldo > 0 && totalPos > 0 ? `<span class="wallet-pct">${pct}%</span>` : ""}
+                      </div>
+                      <div class="acct-bar" style="margin-top:6px"><span style="width:${barW.toFixed(1)}%"></span></div>
+                    </div>
+                    <div class="wallet-row-right">
+                      <div class="wallet-row-bal ${it.saldo < 0 ? "amt-out" : ""}">${esc(fmtRp(it.saldo))}</div>
+                      <div class="wallet-row-sub">${esc(it.style.catLabel || "Lainnya")}</div>
+                    </div>
+                  </div>
+                  ${exp ? `
+                    <div class="wallet-qa">
+                      <button class="btn btn-primary" type="button" data-ws-transfer="${esc(it.name)}">🔁 Pindah</button>
+                      <button class="btn btn-soft" type="button" data-ws-add="${esc(it.name)}">➕ Catat</button>
+                      <button class="btn btn-ghost" type="button" data-ws-hist="${esc(it.name)}">🧾 Riwayat</button>
+                    </div>` : ""}
+                </div>`;
+            }).join("")}`;
+        }).join("");
+
+    body.innerHTML = `
+      <div class="wallet-head-bar">
+        <span style="font-size:12.5px;color:var(--muted);font-weight:700">Dikelompokkan otomatis · Tap akun untuk aksi</span>
+        <span class="wallet-total-chip">${esc(fmtRp(totalBalance()))}</span>
+      </div>
+      <div class="seg seg-full">
+        ${[["ALL", "Semua"], ["EWALLET", "E-Wallet"], ["BANK", "Bank"], ["OTHER", "Tunai"]].map(([k, lbl]) => `
+          <button type="button" class="seg-btn ${ws.filter === k ? "active" : ""}" data-ws-filter="${k}">${lbl}</button>
+        `).join("")}
+      </div>
+      <div class="wallet-switch-row">
+        <span>Menampilkan ${visible.length} akun</span>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <span>Sembunyikan Rp 0</span>
+          <span class="switch"><input type="checkbox" id="wsHideZero" ${ws.hideZero ? "checked" : ""} /><span class="track"></span></span>
+        </label>
+      </div>
+      <div>${groupsHtml}</div>
+      <div class="form-actions" style="margin-top:14px">
+        <button class="btn btn-ghost" type="button" id="wsOrderBtn">Atur Urutan</button>
+        <button class="btn btn-primary" type="button" id="wsTransferBtn">🔁 Pindah Saldo</button>
+      </div>`;
+
+    body.querySelectorAll("[data-ws-filter]").forEach((b) => b.addEventListener("click", () => {
+      ws.filter = b.dataset.wsFilter;
+      renderSheetContent(body);
+    }));
+    const hz = body.querySelector("#wsHideZero");
+    if (hz) hz.addEventListener("change", () => { ws.hideZero = hz.checked; renderSheetContent(body); });
+    const sz = body.querySelector("#wsShowZeroBtn");
+    if (sz) sz.addEventListener("click", () => { ws.hideZero = false; renderSheetContent(body); });
+    body.querySelectorAll("[data-ws-toggle]").forEach((row) => row.addEventListener("click", () => {
+      const name = row.dataset.wsToggle;
+      ws.expanded = ws.expanded && sameText(ws.expanded, name) ? null : name;
+      renderSheetContent(body);
+    }));
+    body.querySelectorAll("[data-ws-transfer]").forEach((b) => b.addEventListener("click", () => {
+      openTransferForm(null, b.dataset.wsTransfer);
+    }));
+    body.querySelectorAll("[data-ws-add]").forEach((b) => b.addEventListener("click", () => {
+      openTxForm({ akun: b.dataset.wsAdd });
+    }));
+    body.querySelectorAll("[data-ws-hist]").forEach((b) => b.addEventListener("click", () => {
+      state.home.akun = b.dataset.wsHist;
+      closeSheet();
+      goTo("home");
+      renderHome();
+    }));
+    body.querySelector("#wsOrderBtn").addEventListener("click", () => openWalletOrderSheet());
+    body.querySelector("#wsTransferBtn").addEventListener("click", () => openTransferForm());
+  };
+
+  openSheet("Akun Penyimpanan Dana 💳", "<div></div>", renderSheetContent);
+}
+
+function openWalletOrderSheet() {
+  let current = allAccountNames();
+  const draw = (body) => {
+    body.innerHTML = `
+      <p style="font-size:12.5px;color:var(--muted);font-weight:700;margin-bottom:10px">Geser naik atau turun urutan dompet di layar utama.</p>
+      ${current.map((name, i) => {
+        const s = accountStyle(name);
+        return `
+          <div class="wallet-order-row" style="${acctVars(name)}">
+            <span class="acct-badge" aria-hidden="true">${s.svg ? JAR_ICON : s.emoji}</span>
+            <b>${esc(name)}</b>
+            <button class="icon-btn icon-btn-sm" type="button" data-ord="-1" data-idx="${i}" ${i === 0 ? "disabled" : ""}>▲</button>
+            <button class="icon-btn icon-btn-sm" type="button" data-ord="1" data-idx="${i}" ${i === current.length - 1 ? "disabled" : ""}>▼</button>
+          </div>`;
+      }).join("")}
+      <div class="form-actions" style="margin-top:12px">
+        <button class="btn btn-primary" type="button" id="ordDone">Selesai ✓</button>
+      </div>`;
+    body.querySelectorAll("[data-ord]").forEach((b) => b.addEventListener("click", () => {
+      const idx = Number(b.dataset.idx);
+      const next = idx + Number(b.dataset.ord);
+      if (next < 0 || next >= current.length) return;
+      const [m] = current.splice(idx, 1);
+      current.splice(next, 0, m);
+      saveAccountOrder(current);
+      renderAccounts();
+      draw(body);
+    }));
+    body.querySelector("#ordDone").addEventListener("click", () => openWalletSheet());
+  };
+  openSheet("Atur Urutan Akun", "<div></div>", draw);
 }
 
 // ---------------- Riwayat ----------------
@@ -1035,11 +1247,421 @@ function renderCompare() {
   }).join("");
 }
 
-// ---------------- Money: budget, goal, berulang ----------------
+// ---------------- Money: hutang, budget, goal, berulang ----------------
 function renderMoney() {
+  renderDebts();
   renderBudgets();
   renderGoals();
   renderRecurring();
+}
+
+function paymentsForDebt(debtId) {
+  return state.debtPayments
+    .filter((p) => p.debtId === debtId)
+    .slice()
+    .sort((a, b) => (b.tanggal + (b.jam || "")).localeCompare(a.tanggal + (a.jam || "")));
+}
+
+function renderDebts() {
+  const tilesEl = document.getElementById("debtSummaryTiles");
+  const ctrlEl = document.getElementById("debtControls");
+  const listEl = document.getElementById("debtList");
+  if (!tilesEl || !ctrlEl || !listEl) return;
+
+  const activeHutang = state.debts.filter((d) => !d.settled && d.tipe === "HUTANG");
+  const activePiutang = state.debts.filter((d) => !d.settled && d.tipe === "PIUTANG");
+  const sumHutang = activeHutang.reduce((s, d) => s + Math.max(0, d.amount - d.paidAmount), 0);
+  const sumPiutang = activePiutang.reduce((s, d) => s + Math.max(0, d.amount - d.paidAmount), 0);
+
+  tilesEl.innerHTML = `
+    <button type="button" class="debt-tile hutang ${state.debtTab === "HUTANG" ? "active" : ""}" data-debt-tab="HUTANG">
+      <div class="lbl">Hutang Saya</div>
+      <div class="val">${esc(fmtRp(sumHutang))}</div>
+      <div class="sub">${activeHutang.length} belum lunas</div>
+    </button>
+    <button type="button" class="debt-tile piutang ${state.debtTab === "PIUTANG" ? "active" : ""}" data-debt-tab="PIUTANG">
+      <div class="lbl">Hutang Orang ke Kita</div>
+      <div class="val">${esc(fmtRp(sumPiutang))}</div>
+      <div class="sub">${activePiutang.length} belum lunas</div>
+    </button>`;
+
+  ctrlEl.innerHTML = `
+    <div class="seg seg-sm">
+      <button type="button" class="seg-btn ${state.debtTab === "HUTANG" ? "active" : ""}" data-debt-tab="HUTANG">Hutang Saya</button>
+      <button type="button" class="seg-btn ${state.debtTab === "PIUTANG" ? "active" : ""}" data-debt-tab="PIUTANG">Hutang Orang</button>
+    </div>
+    <div class="chips" style="margin:0;padding:0">
+      ${[["ALL", "Semua"], ["ACTIVE", "Belum Lunas"], ["SETTLED", "Lunas"]].map(([k, lbl]) => `
+        <button type="button" class="chip ${state.debtFilter === k ? "active" : ""}" data-debt-filter="${k}">${lbl}</button>
+      `).join("")}
+    </div>`;
+
+  const shown = state.debts
+    .filter((d) => d.tipe === state.debtTab)
+    .filter((d) => state.debtFilter === "ALL" ? true : state.debtFilter === "ACTIVE" ? !d.settled : d.settled)
+    .slice()
+    .sort((a, b) => Number(a.settled) - Number(b.settled) || String(b.tanggal || "").localeCompare(String(a.tanggal || "")));
+
+  if (shown.length === 0) {
+    listEl.innerHTML = emptyState("🤝", state.debtTab === "HUTANG" ? "Belum ada catatan hutang kamu." : "Belum ada catatan hutang orang ke kamu.");
+    return;
+  }
+
+  listEl.innerHTML = shown.map((d) => {
+    const isH = d.tipe === "HUTANG";
+    const rem = Math.max(0, d.amount - d.paidAmount);
+    const pct = d.amount > 0 ? clamp((d.paidAmount / d.amount) * 100, 0, 100) : 0;
+    const overdue = !d.settled && !!d.dueDate && d.dueDate < todayIso();
+    const payments = paymentsForDebt(d.id);
+    const latest = payments[0] || null;
+    const accent = d.settled || !isH ? "#047857" : "#E11D48";
+    const badgeCls = d.settled ? "badge-ok" : overdue ? "badge-bad" : d.paidAmount > 0 ? "badge-warn" : "badge-muted";
+    const badgeLbl = d.settled ? "Lunas" : overdue ? "Jatuh tempo lewat" : d.paidAmount > 0 ? `Dicicil ${Math.round(pct)}%` : "Belum lunas";
+
+    return `
+      <div class="debt-card">
+        <div class="debt-head">
+          <span class="emo" style="background:${d.settled || !isH ? "var(--income-soft)" : "var(--expense-soft)"};color:${accent}" aria-hidden="true">👤</span>
+          <div class="debt-meta">
+            <div><b>${esc(d.personName)}</b><span class="badge ${badgeCls}">${badgeLbl}</span></div>
+            <small>${esc(dateLabel(d.tanggal, true))}${d.dueDate ? " · Tempo " + esc(dateLabel(d.dueDate, true)) : ""}</small>
+          </div>
+          <button class="icon-btn icon-btn-sm" type="button" data-debt-edit="${esc(d.id)}" aria-label="Edit ${esc(d.personName)}"><svg class="ico"><use href="#i-edit"/></svg></button>
+        </div>
+        <div class="debt-amt-row">
+          <div>
+            <div style="font-size:11.5px;color:var(--muted);font-weight:700">${d.settled ? "Total" : (isH ? "Sisa hutang" : "Sisa piutang")}</div>
+            <div class="big" style="color:${accent}">${esc(fmtRp(d.settled ? d.amount : rem))}</div>
+          </div>
+          ${d.paidAmount > 0 && !d.settled ? `<div style="font-size:11.5px;color:var(--muted);font-weight:700">Terbayar ${esc(fmtRp(d.paidAmount))} / ${esc(fmtRp(d.amount))}</div>` : ""}
+        </div>
+        ${d.paidAmount > 0 || d.settled ? `<div class="bar"><span style="width:${pct.toFixed(1)}%;background:${d.settled ? "#10B981" : accent}"></span></div>` : ""}
+        ${latest ? `<div style="margin-top:6px;font-size:11.5px;color:var(--muted);font-weight:700">${payments.length}x cicilan · Terakhir ${esc(dateLabel(latest.tanggal, true))} (${esc(fmtRp(latest.amount))})</div>` : ""}
+        ${d.catatan ? `<div style="margin-top:6px;font-size:12px;color:var(--muted);font-weight:600">${esc(d.catatan)}</div>` : ""}
+        <div class="debt-actions">
+          <button class="btn btn-ghost" type="button" data-debt-history="${esc(d.id)}">🕒 Riwayat${payments.length ? ` (${payments.length})` : ""}</button>
+          ${!d.settled ? `<button class="btn btn-primary" type="button" data-debt-pay="${esc(d.id)}" style="${isH ? "background:#E11D48" : "background:#047857"}">${isH ? "Bayar / Cicil" : "Terima Cicilan"}</button>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function openDebtForm(debt = null, defaultType = "HUTANG") {
+  const isEdit = !!debt;
+  const f = {
+    id: debt ? debt.id : uuid(),
+    tipe: debt ? debt.tipe : defaultType,
+    akun: debt ? debt.akun : "Tunai",
+    recordInitialTx: false,
+  };
+  const html = `
+    <form class="form" id="debtForm" novalidate>
+      <div class="type-toggle">
+        <button type="button" class="type-btn out ${f.tipe === "HUTANG" ? "active" : ""}" data-dtipe="HUTANG">🔴 Hutang Saya</button>
+        <button type="button" class="type-btn in ${f.tipe === "PIUTANG" ? "active" : ""}" data-dtipe="PIUTANG">🟢 Hutang Orang</button>
+      </div>
+      <label class="field"><span class="field-label" id="dPersonLbl">${f.tipe === "HUTANG" ? "Pinjam dari siapa?" : "Siapa yang berhutang?"}</span>
+        <input id="dPerson" maxlength="60" placeholder="Nama orang / pihak" value="${esc(debt ? debt.personName : "")}" required /></label>
+      ${amountFieldHtml("dAmount", debt ? debt.amount : 0)}
+      <div class="row-2">
+        <label class="field"><span class="field-label">Tanggal</span><input type="date" id="dDate" value="${esc(debt ? debt.tanggal : todayIso())}" required /></label>
+        <label class="field"><span class="field-label">Jatuh tempo (opsional)</span><input type="date" id="dDue" value="${esc(debt ? debt.dueDate : "")}" /></label>
+      </div>
+      <div class="field"><span class="field-label">Akun</span>${pickGroup("dAkun", accountItems(), f.akun)}</div>
+      <label class="field"><span class="field-label">Catatan (opsional)</span><input id="dNote" maxlength="160" placeholder="opsional" value="${esc(debt ? debt.catatan : "")}" /></label>
+      ${!isEdit ? `
+        <div class="switch-row">
+          <div class="switch-text">
+            <div class="switch-title">Catat ke transaksi &amp; saldo akun</div>
+            <div class="switch-sub" id="dTxHint">${f.tipe === "HUTANG" ? "Menambah saldo akun (Pemasukan)." : "Mengurangi saldo akun (Pengeluaran)."}</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="dRecordInit" /><span class="track"></span></label>
+        </div>` : ""}
+      <div class="form-error" role="alert"></div>
+      <div class="form-actions">
+        ${isEdit ? `<button type="button" class="btn btn-danger-soft" id="dDelete"><svg class="ico"><use href="#i-trash"/></svg>Hapus</button>` : ""}
+        <button type="submit" class="btn btn-primary" id="dSave">${isEdit ? "Simpan perubahan" : "Simpan 🤝"}</button>
+      </div>
+    </form>`;
+
+  openSheet(isEdit ? "Ubah Catatan Hutang" : "Catat Hutang / Piutang 🤝", html, (body) => {
+    const form = body.querySelector("#debtForm");
+    const amountEl = body.querySelector("#dAmount");
+    bindAmountInput(amountEl);
+    bindPickGroup(body, "dAkun", (v) => { f.akun = v; });
+
+    body.querySelectorAll("[data-dtipe]").forEach((b) => b.addEventListener("click", () => {
+      f.tipe = b.dataset.dtipe;
+      body.querySelectorAll("[data-dtipe]").forEach((x) => x.classList.toggle("active", x === b));
+      body.querySelector("#dPersonLbl").textContent = f.tipe === "HUTANG" ? "Pinjam dari siapa?" : "Siapa yang berhutang?";
+      const hint = body.querySelector("#dTxHint");
+      if (hint) hint.textContent = f.tipe === "HUTANG" ? "Menambah saldo akun (Pemasukan)." : "Mengurangi saldo akun (Pengeluaran).";
+    }));
+
+    if (isEdit) {
+      body.querySelector("#dDelete").addEventListener("click", async (e) => {
+        const ok = await askConfirm(`Hapus catatan dengan "${debt.personName}" beserta riwayat cicilannya?`);
+        if (!ok) return;
+        try {
+          await withBusy(e.currentTarget, "Menghapus...", async () => { ensureOnline(); await api.debtDelete(debt.id); });
+          removeById(state.debts, debt.id);
+          state.debtPayments = state.debtPayments.filter((p) => p.debtId !== debt.id);
+          closeSheet();
+          toast("Catatan dihapus 🗑️");
+          commitLocal();
+        } catch (err) { setFormError(form, err.message); }
+      });
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setFormError(form, "");
+      const person = body.querySelector("#dPerson").value.trim();
+      const amt = readAmount(amountEl);
+      const tanggal = body.querySelector("#dDate").value || todayIso();
+      const dueDate = body.querySelector("#dDue").value || "";
+      const catatan = body.querySelector("#dNote").value.trim();
+      if (!person) return setFormError(form, "Nama pihak wajib diisi");
+      if (!(amt > 0)) return setFormError(form, "Jumlah harus lebih dari 0");
+      if (isEdit && amt < debt.paidAmount) return setFormError(form, `Tidak boleh kurang dari yang sudah dibayar (${fmtRpRaw(debt.paidAmount)})`);
+
+      const paidAmount = isEdit ? debt.paidAmount : 0;
+      const entity = {
+        id: f.id,
+        tipe: f.tipe,
+        personName: person,
+        amount: amt,
+        paidAmount,
+        tanggal,
+        dueDate,
+        akun: f.akun || "Tunai",
+        catatan,
+        settled: paidAmount >= amt - 0.01,
+      };
+      const recordInit = !isEdit && !!body.querySelector("#dRecordInit")?.checked;
+      try {
+        await withBusy(body.querySelector("#dSave"), "Menyimpan...", async () => {
+          ensureOnline();
+          await api.debtUpsert(entity);
+          if (recordInit) {
+            const isH = entity.tipe === "HUTANG";
+            const tx = {
+              id: uuid(),
+              tanggal: entity.tanggal,
+              jam: nowHms(),
+              tipe: isH ? "Pemasukan" : "Pengeluaran",
+              kategori: isH ? "Hutang" : "Piutang",
+              akun: entity.akun,
+              merchant: isH ? `Pinjam dari ${entity.personName}` : `Pinjamkan ke ${entity.personName}`,
+              deskripsi: entity.catatan || (isH ? "Terima pinjaman" : "Pemberian pinjaman"),
+              jumlah: entity.amount,
+              sumber: `debt:${entity.id}`,
+            };
+            await api.saveTx(tx);
+            upsertById(state.transactions, normalizeTx(tx));
+          }
+        });
+        upsertById(state.debts, normalizeDebt(entity));
+        state.debtTab = entity.tipe;
+        closeSheet();
+        toast("Catatan tersimpan 🤝");
+        commitLocal();
+      } catch (err) { setFormError(form, err.message); }
+    });
+  });
+}
+
+function openPayDebtForm(debt) {
+  const isH = debt.tipe === "HUTANG";
+  const rem = Math.max(0, debt.amount - debt.paidAmount);
+  if (rem <= 0) return toast("Hutang ini sudah lunas!");
+  const remLong = Math.max(1, Math.round(rem));
+  const f = { akun: debt.akun || "Tunai" };
+  const quick = [
+    ...(Math.floor(remLong / 4) >= 1 && Math.floor(remLong / 4) < remLong ? [["25%", Math.floor(remLong / 4)]] : []),
+    ...(Math.floor(remLong / 2) >= 1 && Math.floor(remLong / 2) < remLong ? [["50%", Math.floor(remLong / 2)]] : []),
+    ["Lunas", remLong],
+  ];
+
+  const html = `
+    <form class="form" id="dpForm" novalidate>
+      <div class="form-note">💡 <span>Sisa saat ini: <b>${esc(fmtRpRaw(rem))}</b></span></div>
+      ${amountFieldHtml("dpAmount", remLong, "Nominal cicilan / bayar")}
+      <div class="quick-chips">
+        ${quick.map(([lbl, val]) => `<button type="button" class="quick-chip" data-quick-amt="${val}">${lbl}</button>`).join("")}
+      </div>
+      <div id="dpAfterHint" style="font-size:12px;font-weight:700;color:var(--muted);margin:-4px 0 12px">Status setelah ini: Lunas</div>
+      <label class="field"><span class="field-label">Tanggal pembayaran</span><input type="date" id="dpDate" value="${todayIso()}" required /></label>
+      <div class="field"><span class="field-label">${isH ? "Bayar pakai akun" : "Masuk ke akun"}</span>${pickGroup("dpAkun", accountItems(), f.akun)}</div>
+      <label class="field"><span class="field-label">Catatan cicilan (opsional)</span><input id="dpNote" maxlength="140" placeholder="Mis. Cicilan ke-1, via transfer" /></label>
+      <div class="switch-row">
+        <div class="switch-text">
+          <div class="switch-title">Catat ke transaksi &amp; saldo akun</div>
+          <div class="switch-sub" id="dpSaldoHint">${isH ? `Saldo ${esc(f.akun)} berkurang otomatis.` : `Saldo ${esc(f.akun)} bertambah otomatis.`}</div>
+        </div>
+        <label class="switch"><input type="checkbox" id="dpRecordTx" checked /><span class="track"></span></label>
+      </div>
+      <div class="form-error" role="alert"></div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" id="dpSave">${isH ? "Catat Cicilan" : "Catat Terima"}</button>
+      </div>
+    </form>`;
+
+  openSheet(isH ? `Bayar / Cicil ke ${debt.personName}` : `Terima Cicilan dari ${debt.personName}`, html, (body) => {
+    const form = body.querySelector("#dpForm");
+    const amtInput = body.querySelector("#dpAmount");
+    const afterHint = body.querySelector("#dpAfterHint");
+    bindAmountInput(amtInput);
+
+    const updateAfter = () => {
+      const v = readAmount(amtInput);
+      const after = Math.max(0, rem - v);
+      afterHint.textContent = v > 0
+        ? (after < 1 ? "Status setelah ini: Lunas ✅" : `Sisa setelah cicilan ini: ${fmtRpRaw(after)}`)
+        : `Sisa saat ini: ${fmtRpRaw(rem)}`;
+    };
+    amtInput.addEventListener("input", updateAfter);
+    body.querySelectorAll("[data-quick-amt]").forEach((b) => b.addEventListener("click", () => {
+      amtInput.value = formatAmountText(Number(b.dataset.quickAmt));
+      updateAfter();
+    }));
+    bindPickGroup(body, "dpAkun", (v) => {
+      f.akun = v;
+      body.querySelector("#dpSaldoHint").textContent = isH ? `Saldo ${v} berkurang otomatis.` : `Saldo ${v} bertambah otomatis.`;
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      setFormError(form, "");
+      const payAmt = readAmount(amtInput);
+      const payDate = body.querySelector("#dpDate").value || todayIso();
+      const note = body.querySelector("#dpNote").value.trim();
+      const recordTx = !!body.querySelector("#dpRecordTx").checked;
+      if (!(payAmt > 0)) return setFormError(form, "Nominal harus lebih dari 0");
+      if (payAmt > rem + 0.01) return setFormError(form, `Melebihi sisa (${fmtRpRaw(rem)})`);
+
+      const effective = Math.min(payAmt, rem);
+      const newPaid = Math.min(debt.amount, debt.paidAmount + effective);
+      const isNowSettled = newPaid >= debt.amount - 0.01;
+      const payTime = nowHms();
+      const payNote = note || (isNowSettled ? `Pelunasan ${isH ? "Hutang Saya" : "Hutang Orang"}` : `Cicilan ${isH ? "Hutang Saya" : "Hutang Orang"}`);
+
+      const updatedDebt = { ...debt, paidAmount: isNowSettled ? debt.amount : newPaid, settled: isNowSettled };
+      const linkedTxId = recordTx ? uuid() : null;
+      const payment = {
+        id: uuid(),
+        debtId: debt.id,
+        tipe: debt.tipe,
+        personName: debt.personName,
+        amount: effective,
+        tanggal: payDate,
+        jam: payTime.slice(0, 5),
+        akun: f.akun || "Tunai",
+        catatan: payNote,
+        linkedTxId,
+      };
+      const tx = recordTx ? {
+        id: linkedTxId,
+        tanggal: payDate,
+        jam: payTime,
+        tipe: isH ? "Pengeluaran" : "Pemasukan",
+        kategori: isH ? "Hutang" : "Piutang",
+        akun: f.akun || "Tunai",
+        merchant: isH ? `Bayar hutang ke ${debt.personName}` : `Terima piutang dari ${debt.personName}`,
+        deskripsi: payNote,
+        jumlah: effective,
+        sumber: `debt:${debt.id}`,
+      } : null;
+
+      try {
+        await withBusy(body.querySelector("#dpSave"), "Menyimpan...", async () => {
+          ensureOnline();
+          await api.debtUpsert(updatedDebt);
+          await api.debtPaymentUpsert(payment);
+          if (tx) await api.saveTx(tx);
+        });
+        upsertById(state.debts, normalizeDebt(updatedDebt));
+        upsertById(state.debtPayments, normalizeDebtPayment(payment));
+        if (tx) upsertById(state.transactions, normalizeTx(tx));
+        closeSheet();
+        toast(isNowSettled ? "Hutang lunas! 🎉" : "Cicilan tercatat ✅");
+        commitLocal();
+      } catch (err) { setFormError(form, err.message); }
+    });
+  });
+}
+
+function openDebtHistorySheet(debtId) {
+  const draw = (body) => {
+    const debt = state.debts.find((d) => d.id === debtId);
+    if (!debt) return closeSheet();
+    const isH = debt.tipe === "HUTANG";
+    const rem = Math.max(0, debt.amount - debt.paidAmount);
+    const pct = debt.amount > 0 ? clamp((debt.paidAmount / debt.amount) * 100, 0, 100) : 0;
+    const payments = paymentsForDebt(debt.id);
+    const accent = debt.settled || !isH ? "#047857" : "#E11D48";
+
+    body.innerHTML = `
+      <div class="card" style="background:var(--surface-2);margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <b>${esc(debt.personName)}</b>
+          <span class="badge ${debt.settled ? "badge-ok" : "badge-warn"}">${debt.settled ? "Lunas" : `Dicicil ${Math.round(pct)}%`}</span>
+        </div>
+        <div class="summary3" style="margin-bottom:8px">
+          <div class="sum-card"><div class="lbl">Total</div><div class="val">${esc(fmtRp(debt.amount))}</div></div>
+          <div class="sum-card"><div class="lbl">Terbayar</div><div class="val amt-in">${esc(fmtRp(debt.paidAmount))}</div></div>
+          <div class="sum-card"><div class="lbl">Sisa</div><div class="val" style="color:${accent}">${esc(fmtRp(rem))}</div></div>
+        </div>
+        <div class="bar"><span style="width:${pct.toFixed(1)}%;background:${debt.settled ? "#10B981" : accent}"></span></div>
+      </div>
+      <div style="font-size:13px;font-weight:800;margin-bottom:8px">Daftar Pembayaran (${payments.length})</div>
+      ${payments.length === 0
+        ? `<div class="empty">${debt.paidAmount > 0 ? `Sudah dibayar ${esc(fmtRpRaw(debt.paidAmount))} sebelumnya.` : "Belum ada riwayat cicilan / pembayaran."}</div>`
+        : payments.map((p, idx) => `
+          <div class="debt-hist-item">
+            <span class="debt-hist-idx" style="background:${isH ? "var(--expense-soft)" : "var(--income-soft)"};color:${accent}">#${payments.length - idx}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:900;font-size:14px">${esc(fmtRp(p.amount))} <span style="font-weight:700;color:var(--muted);font-size:12px">· ${esc(p.akun)}</span></div>
+              <div style="font-size:11.5px;color:var(--muted);font-weight:600">${esc(dateLabel(p.tanggal, true))}${p.jam ? " · " + esc(p.jam.slice(0, 5)) : ""}</div>
+              ${p.catatan ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(p.catatan)}</div>` : ""}
+              ${p.linkedTxId ? `<div style="font-size:11px;color:var(--income);font-weight:700;margin-top:2px">✓ Tercatat di transaksi &amp; saldo</div>` : ""}
+            </div>
+            <button class="icon-btn icon-btn-sm" type="button" data-del-payment="${esc(p.id)}" aria-label="Hapus cicilan"><svg class="ico"><use href="#i-trash"/></svg></button>
+          </div>`).join("")}
+      ${!debt.settled ? `
+        <div class="form-actions" style="margin-top:12px">
+          <button class="btn btn-primary" type="button" id="dhAddBtn">${isH ? "Tambah Cicilan / Bayar" : "Catat Cicilan Diterima"}</button>
+        </div>` : ""}`;
+
+    const addBtn = body.querySelector("#dhAddBtn");
+    if (addBtn) addBtn.addEventListener("click", () => openPayDebtForm(debt));
+    body.querySelectorAll("[data-del-payment]").forEach((b) => b.addEventListener("click", async () => {
+      const p = payments.find((x) => x.id === b.dataset.delPayment);
+      if (!p) return;
+      const ok = await askConfirm(`Hapus pembayaran ${fmtRpRaw(p.amount)} pada ${dateLabel(p.tanggal, true)}?${p.linkedTxId ? ` Transaksi di akun ${p.akun} juga akan dihapus.` : ""}`);
+      if (!ok) return;
+      try {
+        await withBusy(b, "...", async () => {
+          ensureOnline();
+          await api.debtPaymentDelete(p.id);
+          if (p.linkedTxId) {
+            await safe(() => api.deleteTx(p.linkedTxId), null);
+            removeById(state.transactions, p.linkedTxId);
+          }
+          const newPaid = Math.max(0, debt.paidAmount - p.amount);
+          const cleanPaid = newPaid < 0.01 ? 0 : newPaid;
+          const updatedDebt = { ...debt, paidAmount: cleanPaid, settled: debt.amount > 0 && cleanPaid >= debt.amount - 0.01 };
+          await api.debtUpsert(updatedDebt);
+          upsertById(state.debts, normalizeDebt(updatedDebt));
+          removeById(state.debtPayments, p.id);
+        });
+        toast("Riwayat pembayaran dihapus 🗑️");
+        draw(body);
+        commitLocal();
+      } catch (err) { toast(err.message, "error"); }
+    }));
+  };
+  openSheet("Riwayat Cicilan 🕒", "<div></div>", draw);
 }
 
 function budgetBadge(v) {
@@ -1255,8 +1877,8 @@ function renderSettings() {
       </div>
     </section>
 
-    <p class="foot">Catat Keuangan Web v${APP_VERSION} · data sinkron dengan aplikasi HP lewat Apps Script.<br>
-      Scan struk &amp; tangkap notifikasi hanya tersedia di aplikasi HP.</p>`;
+    <p class="foot">Catalyst Web v${APP_VERSION} · data sinkron dengan aplikasi HP lewat Apps Script.<br>
+      Scan foto struk kamera tetap tersedia di aplikasi HP.</p>`;
 }
 
 // ---------------- UI: sheet, toast, konfirmasi ----------------
@@ -1399,32 +2021,228 @@ function merchantDatalist() {
   return seen;
 }
 
-// ---------------- Menu tambah (FAB) ----------------
+// ---------------- Menu tambah (FAB) & Suara AI ----------------
 function openAddMenu() {
   openSheet("Tambah apa hari ini? ✨", `
     <div class="action-list">
+      <button class="action-row" type="button" data-add="voice"><span class="emo" style="--cbg:#D1FAE5" aria-hidden="true">🎙️</span><div><b>Catat Suara AI / Cepat</b><span>Bicara atau ketik kalimat transaksi otomatis</span></div></button>
       <button class="action-row" type="button" data-add="Pengeluaran"><span class="emo" style="--cbg:#FFE4E6" aria-hidden="true">🛍️</span><div><b>Catat Pengeluaran</b><span>Belanja, makan, tagihan, dll.</span></div></button>
       <button class="action-row" type="button" data-add="Pemasukan"><span class="emo" style="--cbg:#D1FAE5" aria-hidden="true">💰</span><div><b>Catat Pemasukan</b><span>Gaji, bonus, uang masuk lainnya</span></div></button>
       <button class="action-row" type="button" data-add="transfer"><span class="emo" style="--cbg:#EFE4FF" aria-hidden="true">🔁</span><div><b>Pindah Saldo</b><span>Transfer antar akun / dompet</span></div></button>
     </div>
-    <p class="sheet-foot-note">📷 Scan struk &amp; tangkap notifikasi tersedia di aplikasi HP.</p>`);
-  // Klik [data-add] ditangani handler global (juga dipakai tombol "Catat cepat" di sidebar PC)
+    <p class="sheet-foot-note">📷 Scan struk kamera &amp; Gemini AI tersedia lengkap di aplikasi Android.</p>`);
+}
+
+function matchWalletWeb(text) {
+  const clean = String(text || "").trim();
+  if (!clean) return null;
+  const lower = clean.toLowerCase();
+  if (lower.includes("dana")) return "DANA";
+  if (lower.includes("gopay") || lower.includes("go-pay") || lower.includes("gojek")) return "GoPay";
+  if (/\bovo\b/i.test(lower)) return "OVO";
+  if (lower.includes("shopeepay") || lower.includes("shopee pay")) return "ShopeePay";
+  if (lower.includes("kartu kredit") || lower.includes("credit card")) return "Kartu Kredit";
+  if (lower.includes("bca") || lower.includes("mybca")) return "BCA";
+  if (lower.includes("mandiri") || lower.includes("livin")) return "Mandiri";
+  if (/\bbri\b|brimo/i.test(lower)) return "BRI";
+  if (/\bbni\b|wondr/i.test(lower)) return "BNI";
+  if (lower.includes("tunai") || /\bcash\b/i.test(lower)) return "Tunai";
+  if (/(seabank|jago|bsi|cimb|octo|permata|jenius|neobank|flip|btn|danamon|ocbc|panin|maybank|allobank|linkaja|lainnya)/i.test(lower)) return "Lainnya";
+  return null;
+}
+
+function parseSpokenAmountWeb(lower) {
+  if (lower.includes("setengah juta")) return 500000;
+  let m = /(\d+(?:[.,]\d+)?)\s*(?:jt|juta)\b/.exec(lower);
+  if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000000);
+  m = /(\d+(?:[.,]\d+)?)\s*(?:rb|ribu|k)\b/.exec(lower);
+  if (m) return Math.round(Number(m[1].replace(",", ".")) * 1000);
+  const words = { satu: 1, se: 1, dua: 2, tiga: 3, empat: 4, lima: 5, enam: 6, tujuh: 7, delapan: 8, sembilan: 9 };
+  let total = 0, cur = 0, hit = false;
+  for (const tok of lower.replace(/-/g, " ").split(/\s+/)) {
+    if (tok === "seribu") { cur += 1000; hit = true; }
+    else if (tok === "seratus") { cur += 100; hit = true; }
+    else if (tok === "sepuluh") { cur += 10; hit = true; }
+    else if (tok === "sebelas") { cur += 11; hit = true; }
+    else if (tok === "belas") { cur += 10; hit = true; }
+    else if (tok === "puluh") { cur = (cur || 1) * 10; hit = true; }
+    else if (tok === "ratus") { cur = (cur || 1) * 100; hit = true; }
+    else if (tok === "ribu" || tok === "rb") { total += (cur || 1) * 1000; cur = 0; hit = true; }
+    else if (tok === "juta" || tok === "jt") { total += (cur || 1) * 1000000; cur = 0; hit = true; }
+    else if (tok in words) { cur += words[tok]; hit = true; }
+  }
+  if (hit && total + cur >= 100) return Math.round(total + cur);
+  if (lower.includes("gocap") || lower.includes("goban")) return 50000;
+  if (lower.includes("ceban")) return 10000;
+  if (lower.includes("goceng")) return 5000;
+  if (lower.includes("seceng")) return 1000;
+  m = /(?:rp\.?\s*)?(\d[\d.,]*)/i.exec(lower);
+  if (m) {
+    const n = Number(m[1].replace(/[.,]/g, ""));
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+function parseVoiceCommandWeb(raw) {
+  const text = String(raw || "").trim();
+  const lower = text.toLowerCase();
+  const amount = parseSpokenAmountWeb(lower);
+  const isInc = /(gaji|terima|dapat|pemasukan|bonus|masuk|refund|jual)/.test(lower);
+  const tipe = isInc ? "Pemasukan" : "Pengeluaran";
+  const tanggal = lower.includes("kemarin") ? addDaysIso(todayIso(), -1) : todayIso();
+  const akun = matchWalletWeb(text) || "Tunai";
+  const catRules = [
+    ["Makanan", /(makan|kopi|resto|cafe|warung|nasi|mie|ayam|bakso|minum|gofood|grabfood|shopeefood)/],
+    ["Transportasi", /(bensin|bbm|parkir|tol|ojek|gojek|grab|kereta|bus|transport)/],
+    ["Tagihan", /(listrik|pln|air|pdam|wifi|internet|pulsa|paket data|bpjs|tagihan|cicilan)/],
+    ["Belanja", /(belanja|indomaret|alfamart|supermarket|tokopedia|shopee|toko)/],
+    ["Kesehatan", /(obat|apotek|dokter|klinik|rumah sakit|sehat)/],
+    ["Hiburan", /(nonton|bioskop|netflix|spotify|game|hiburan|tiket)/],
+    ["Gaji", /\bgaji\b/],
+    ["Bonus", /(bonus|thr|insentif|cashback|hadiah)/],
+  ];
+  const matchedCat = catRules.find(([, re]) => re.test(lower));
+  const kategori = matchedCat ? matchedCat[0] : (isInc ? "Gaji" : "Lainnya");
+  const cleanMerchant = text
+    .replace(/\b(tadi|kemarin|hari ini|barusan|beli|bayar|jajan|terima|dapat|masuk|pakai|pake|via|lewat|menggunakan|dari|ke|uang|saldo|rp)\b/gi, " ")
+    .replace(/\d+(?:[.,]\d+)?\s*(?:rb|ribu|k|jt|juta)?/gi, " ")
+    .replace(/\b(dana|gopay|ovo|shopeepay|bca|mandiri|bri|bni|tunai|cash|kartu kredit)\b/gi, " ")
+    .replace(/\s+/g, " ").trim().slice(0, 40);
+  const merchant = cleanMerchant
+    ? cleanMerchant.split(" ").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+    : kategori;
+  return { id: uuid(), tipe, kategori, akun, merchant, deskripsi: text.slice(0, 140), jumlah: amount, tanggal, jam: nowHms(), sumber: "voice-ai" };
+}
+
+function openVoiceForm() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  let listening = false;
+  let parsed = null;
+
+  const samples = [
+    "Beli kopi kenangan 28rb pakai DANA",
+    "Makan siang 35 ribu tunai",
+    "Bayar listrik 350rb lewat BCA",
+    "Terima gaji 8 juta masuk Mandiri",
+  ];
+
+  const html = `
+    <div class="voice-stage">
+      <button type="button" class="voice-mic-btn" id="vMicBtn" aria-label="Rekam suara">🎙️</button>
+      <div id="vHint" style="font-size:13px;color:var(--muted);font-weight:700">
+        ${SpeechRec ? 'Tap mikrofon lalu ucapkan transaksi kamu (Bahasa Indonesia)' : 'Browser ini belum mendukung mikrofon langsung; ketik atau pilih contoh kalimat di bawah'}
+      </div>
+    </div>
+    <label class="field">
+      <span class="field-label">Kalimat Transaksi</span>
+      <textarea id="vText" rows="2" placeholder="Mis. Beli kopi 28rb pakai DANA" style="min-height:66px;margin-bottom:8px"></textarea>
+    </label>
+    <div class="voice-samples">
+      ${samples.map((s) => `<button type="button" class="voice-sample" data-vsample="${esc(s)}">“${esc(s)}”</button>`).join("")}
+    </div>
+    <div id="vPreviewWrap"></div>`;
+
+  openSheet("Catat Suara AI / Cepat 🎙️", html, (body) => {
+    const micBtn = body.querySelector("#vMicBtn");
+    const hintEl = body.querySelector("#vHint");
+    const textEl = body.querySelector("#vText");
+    const previewWrap = body.querySelector("#vPreviewWrap");
+
+    const renderPreview = () => {
+      const val = textEl.value.trim();
+      if (!val) { previewWrap.innerHTML = ""; parsed = null; return; }
+      parsed = parseVoiceCommandWeb(val);
+      const cs = categoryStyle(parsed.kategori);
+      const inc = parsed.tipe === "Pemasukan";
+      previewWrap.innerHTML = `
+        <div class="voice-preview">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="badge badge-info">✨ Hasil Analisis Otomatis</span>
+            <span class="acct-tag" style="${acctVars(parsed.akun)}">${esc(parsed.akun)}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="tx-ico" style="--c:${cs.c};--cbg:${cs.bg}">${cs.emoji}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:900;font-size:15px">${esc(parsed.merchant)}</div>
+              <div style="font-size:12px;color:var(--muted);font-weight:700">${esc(parsed.kategori)} · ${esc(dateLabel(parsed.tanggal, true))}</div>
+            </div>
+            <div class="tx-amt ${inc ? "amt-in" : "amt-out"}" style="font-size:17px">${inc ? "+" : "−"} ${esc(fmtRpRaw(parsed.jumlah))}</div>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="vEditBtn">Edit Lengkap</button>
+            <button type="button" class="btn btn-primary" id="vSaveBtn" ${parsed.jumlah > 0 ? "" : "disabled"}>Simpan Langsung ✓</button>
+          </div>
+        </div>`;
+      previewWrap.querySelector("#vEditBtn").addEventListener("click", () => {
+        openTxForm({ prefill: parsed });
+      });
+      previewWrap.querySelector("#vSaveBtn").addEventListener("click", async (e) => {
+        try {
+          await withBusy(e.currentTarget, "Menyimpan...", async () => { ensureOnline(); await api.saveTx(parsed); });
+          upsertById(state.transactions, normalizeTx(parsed));
+          closeSheet();
+          toast("Catat suara tersimpan ✨");
+          commitLocal();
+        } catch (err) { toast(err.message, "error"); }
+      });
+    };
+
+    textEl.addEventListener("input", renderPreview);
+    body.querySelectorAll("[data-vsample]").forEach((b) => b.addEventListener("click", () => {
+      textEl.value = b.dataset.vsample;
+      renderPreview();
+    }));
+
+    if (SpeechRec) {
+      micBtn.addEventListener("click", () => {
+        if (listening && rec) { rec.stop(); return; }
+        rec = new SpeechRec();
+        rec.lang = "id-ID";
+        rec.interimResults = true;
+        rec.maxAlternatives = 1;
+        listening = true;
+        micBtn.classList.add("listening");
+        micBtn.textContent = "⏹";
+        hintEl.textContent = "Mendengarkan… ucapkan transaksi & nama dompetnya";
+        rec.onresult = (ev) => {
+          const spoken = Array.from(ev.results).map((r) => r[0].transcript).join(" ").trim();
+          textEl.value = spoken;
+          renderPreview();
+        };
+        rec.onerror = (ev) => {
+          hintEl.textContent = "Gagal menangkap suara (" + ev.error + "). Coba lagi atau ketik di bawah.";
+        };
+        rec.onend = () => {
+          listening = false;
+          micBtn.classList.remove("listening");
+          micBtn.textContent = "🎙️";
+          if (textEl.value.trim()) hintEl.textContent = "Selesai mendengarkan. Cek hasil di bawah atau ketuk Simpan.";
+        };
+        try { rec.start(); } catch (err) { hintEl.textContent = "Tidak bisa mengakses mikrofon."; }
+      });
+    } else {
+      micBtn.addEventListener("click", () => textEl.focus());
+    }
+  });
 }
 
 // ---------------- Form transaksi ----------------
-function openTxForm({ tx = null, tipe = "Pengeluaran" } = {}) {
+function openTxForm({ tx = null, tipe = "Pengeluaran", prefill = null, akun = null } = {}) {
   const isEdit = !!tx;
   const orig = tx ? { ...tx } : null;
+  const seed = tx || prefill;
   const f = {
-    id: tx ? tx.id : uuid(), // id dibuat sekali → simpan ulang setelah gagal tetap idempoten
-    tipe: tx ? (isIncome(tx) ? "Pemasukan" : "Pengeluaran") : tipe,
-    kategori: tx ? categoryKey(tx.kategori) : (tipe === "Pemasukan" ? "Gaji" : "Makanan"),
-    akun: tx ? tx.akun : (sortAccounts(Object.keys(accountBalances()).filter((a) => balanceOf(a) > 0))[0] || "Tunai"),
-    kategoriTouched: isEdit,
+    id: tx ? tx.id : (prefill && prefill.id ? prefill.id : uuid()), // id dibuat sekali → simpan ulang setelah gagal tetap idempoten
+    tipe: seed ? (sameText(seed.tipe, "Pemasukan") ? "Pemasukan" : "Pengeluaran") : tipe,
+    kategori: seed ? categoryKey(seed.kategori) : (tipe === "Pemasukan" ? "Gaji" : "Makanan"),
+    akun: seed ? seed.akun : (akun || sortAccounts(Object.keys(accountBalances()).filter((a) => balanceOf(a) > 0))[0] || "Tunai"),
+    kategoriTouched: !!seed,
   };
   const openedAt = nowHms();
-  const initialDate = tx ? tx.tanggal : todayIso();
-  const initialTime = tx ? (tx.jam || "").slice(0, 5) : openedAt.slice(0, 5);
+  const initialDate = seed ? seed.tanggal : todayIso();
+  const initialTime = seed ? (seed.jam || "").slice(0, 5) : openedAt.slice(0, 5);
   const merchants = merchantDatalist();
 
   const html = `
@@ -1433,14 +2251,14 @@ function openTxForm({ tx = null, tipe = "Pengeluaran" } = {}) {
         <button type="button" class="type-btn out ${f.tipe === "Pengeluaran" ? "active" : ""}" data-tipe="Pengeluaran">🔻 Pengeluaran</button>
         <button type="button" class="type-btn in ${f.tipe === "Pemasukan" ? "active" : ""}" data-tipe="Pemasukan">🔺 Pemasukan</button>
       </div>
-      ${amountFieldHtml("fAmount", tx ? tx.jumlah : 0, "Jumlah", "f-amount")}
+      ${amountFieldHtml("fAmount", seed ? seed.jumlah : 0, "Jumlah", "f-amount")}
       <div class="field f-cat"><span class="field-label">Kategori</span>${pickGroup("fCat", categoryItems(), f.kategori)}</div>
       <div class="field f-acct"><span class="field-label">Akun</span>${pickGroup("fAkun", accountItems(), f.akun)}<div class="hint" id="fSaldo"></div></div>
       <label class="field f-merchant"><span class="field-label">Nama / Merchant</span>
-        <input id="fMerchant" list="fMerchantList" maxlength="80" placeholder="mis. Warung Bu Siti" value="${esc(tx ? tx.merchant : "")}" autocomplete="off" /></label>
+        <input id="fMerchant" list="fMerchantList" maxlength="80" placeholder="mis. Warung Bu Siti" value="${esc(seed ? (seed.merchant || "") : "")}" autocomplete="off" /></label>
       <datalist id="fMerchantList">${[...merchants.values()].slice(0, 60).map((t) => `<option value="${esc(t.merchant.trim())}"></option>`).join("")}</datalist>
       <label class="field f-desc"><span class="field-label">Catatan</span>
-        <input id="fDesc" maxlength="200" placeholder="opsional, bisa pakai #tag" value="${esc(tx ? tx.deskripsi : "")}" autocomplete="off" /></label>
+        <input id="fDesc" maxlength="200" placeholder="opsional, bisa pakai #tag" value="${esc(seed ? (seed.deskripsi || "") : "")}" autocomplete="off" /></label>
       <div class="row-2 f-dt">
         <label class="field"><span class="field-label">Tanggal</span><input type="date" id="fDate" value="${esc(initialDate)}" required /></label>
         <label class="field"><span class="field-label">Jam</span><input type="time" id="fTime" value="${esc(initialTime)}" /></label>
@@ -1533,7 +2351,7 @@ function openTxForm({ tx = null, tipe = "Pengeluaran" } = {}) {
         merchant: merchantInput.value.trim(),
         deskripsi: body.querySelector("#fDesc").value.trim(),
         jumlah,
-        sumber: isEdit ? (orig.sumber || "manual") : "web",
+        sumber: isEdit ? (orig.sumber || "manual") : (prefill && prefill.sumber ? prefill.sumber : "web"),
         akun: f.akun || "Tunai",
       };
       try {
@@ -1553,13 +2371,14 @@ function openTxForm({ tx = null, tipe = "Pengeluaran" } = {}) {
 }
 
 // ---------------- Form transfer ----------------
-function openTransferForm(pair = null) {
+function openTransferForm(pair = null, initialFromAkun = null) {
   const isEdit = !!pair;
   const accounts = allAccountNames();
   const positive = sortAccounts(Object.keys(accountBalances()).filter((a) => balanceOf(a) > 0));
+  const defaultFrom = initialFromAkun || positive[0] || "Tunai";
   const f = {
-    from: isEdit ? pair.out.akun : (positive[0] || "Tunai"),
-    to: isEdit ? pair.inn.akun : (accounts.find((a) => !sameText(a, positive[0] || "Tunai")) || "DANA"),
+    from: isEdit ? pair.out.akun : defaultFrom,
+    to: isEdit ? pair.inn.akun : (accounts.find((a) => !sameText(a, defaultFrom)) || "DANA"),
   };
   const base = isEdit ? pair.out : null;
   const openedAt = nowHms();
@@ -2180,7 +2999,7 @@ function downloadSettlementPdf() {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.text(monthLabel(state.month), margin, 23);
-    doc.text("Catat Keuangan", pageWidth - margin, 15, { align: "right" });
+    doc.text("Catalyst", pageWidth - margin, 15, { align: "right" });
     doc.text(new Date().toLocaleDateString("id-ID"), pageWidth - margin, 23, { align: "right" });
     doc.setTextColor(61, 42, 63);
   };
@@ -2313,7 +3132,7 @@ async function promptInstall() {
   deferredInstallPrompt = null;
   updateInstallBanner();
   renderSettings();
-  if (choice && choice.outcome === "accepted") toast("Yay, Catat Keuangan terpasang! 🎉");
+  if (choice && choice.outcome === "accepted") toast("Yay, Catalyst terpasang! 🎉");
 }
 
 // ---------------- Status & loader ----------------
@@ -2401,7 +3220,7 @@ function connect(url, secret, telegram = null) {
 function disconnect() {
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(LS_CACHE);
-  Object.assign(state, { url: "", secret: "", telegram: null, transactions: [], budgets: [], goals: [], recurring: [], loadedAt: 0 });
+  Object.assign(state, { url: "", secret: "", telegram: null, transactions: [], budgets: [], goals: [], recurring: [], debts: [], debtPayments: [], loadedAt: 0 });
   showSetup();
   setupMsg("Koneksi diputus. Data di browser ini sudah dihapus.", false);
 }
@@ -2490,7 +3309,8 @@ function handleShortcut() {
   const aksi = params.get("aksi");
   if (!aksi && !params.has("sumber")) return;
   history.replaceState(history.state, "", location.pathname + location.hash);
-  if (aksi === "keluar") openTxForm({ tipe: "Pengeluaran" });
+  if (aksi === "suara") openVoiceForm();
+  else if (aksi === "keluar") openTxForm({ tipe: "Pengeluaran" });
   else if (aksi === "masuk") openTxForm({ tipe: "Pemasukan" });
   else if (aksi === "transfer") openTransferForm();
 }
@@ -2526,10 +3346,8 @@ function bindEvents() {
   // Header & navigasi
   document.getElementById("refreshBtn").addEventListener("click", () => loadAll());
   document.getElementById("hideBtn").addEventListener("click", toggleHide);
-  document.getElementById("editAccountsBtn").addEventListener("click", () => {
-    state.editAccounts = !state.editAccounts;
-    renderAccounts();
-  });
+  const openWalletsBtn = document.getElementById("openWalletsBtn");
+  if (openWalletsBtn) openWalletsBtn.addEventListener("click", () => openWalletSheet());
   document.getElementById("fabAdd").addEventListener("click", openAddMenu);
   document.getElementById("downloadBtn").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2543,11 +3361,21 @@ function bindEvents() {
     if (!target.closest("#downloadMenu") && !target.closest("#downloadBtn")) {
       document.getElementById("downloadMenu").classList.add("hidden");
     }
-    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-filter-kind],[data-month],[data-budget-month],[data-move-account],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-add]");
+    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-add]");
     if (!el) return;
     const d = el.dataset;
     if (d.sheetClose !== undefined) return closeSheet();
-    if (d.add) return d.add === "transfer" ? openTransferForm() : openTxForm({ tipe: d.add });
+    if (d.add) {
+      if (d.add === "voice") return openVoiceForm();
+      if (d.add === "transfer") return openTransferForm();
+      return openTxForm({ tipe: d.add });
+    }
+    if (d.openWallet !== undefined) return openWalletSheet(d.openWallet);
+    if (d.debtTab) { state.debtTab = d.debtTab; return renderDebts(); }
+    if (d.debtFilter) { state.debtFilter = d.debtFilter; return renderDebts(); }
+    if (d.debtPay) { const item = state.debts.find((x) => x.id === d.debtPay); return item && openPayDebtForm(item); }
+    if (d.debtHistory) return openDebtHistorySheet(d.debtHistory);
+    if (d.debtEdit) { const item = state.debts.find((x) => x.id === d.debtEdit); return item && openDebtForm(item); }
     if (d.tab) return goTo(d.tab);
     if (d.goto) return goTo(d.goto);
     if (d.tx) return openTxById(d.tx);
@@ -2559,7 +3387,6 @@ function bindEvents() {
     }
     if (d.month) return changeMonth(Number(d.month));
     if (d.budgetMonth) { state.budgetMonth = addMonths(state.budgetMonth, Number(d.budgetMonth)); return renderBudgets(); }
-    if (d.moveAccount) return moveAccount(d.name, Number(d.moveAccount));
     if (d.budget) { const b = state.budgets.find((x) => x.id === d.budget); return b && openBudgetForm(b); }
     if (d.goalEdit) { const g = state.goals.find((x) => x.id === d.goalEdit); return g && openGoalForm(g); }
     if (d.goalTabung) { const g = state.goals.find((x) => x.id === d.goalTabung); return g && openTabungForm(g); }
@@ -2572,6 +3399,7 @@ function bindEvents() {
     if (d.gran) { state.gran = d.gran; return renderStats(); }
     switch (d.action) {
       case "add": return openAddMenu();
+      case "add-debt": return openDebtForm(null, state.debtTab);
       case "add-budget": return openBudgetForm();
       case "add-goal": return openGoalForm();
       case "add-recurring": return openRecurringForm();
@@ -2645,7 +3473,7 @@ function bindEvents() {
   window.addEventListener("appinstalled", () => {
     deferredInstallPrompt = null;
     updateInstallBanner();
-    toast("Catat Keuangan terpasang 🎉");
+    toast("Catalyst terpasang 🎉");
   });
 }
 
