@@ -11,7 +11,7 @@
  */
 "use strict";
 
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.1.0";
 
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
@@ -20,6 +20,54 @@ const LS_THEME = "ck_dashboard_theme";
 const LS_CACHE = "ck_dashboard_cache_v1";
 const LS_NOTIFY = "ck_dashboard_notify";
 const LS_INSTALL_DISMISS = "ck_dashboard_install_dismissed";
+const LS_STATS_PREFS = "ck_dashboard_stats_prefs_v1";
+
+const DEFAULT_STATS_SECTIONS = [
+  "insights", "heatmap", "cashflow", "category", "wallets", "merchants", "compare", "progress", "export"
+];
+const STATS_SECTIONS_META = {
+  insights: { emoji: "💡", title: "Ringkasan & Insight Pintar", desc: "Rasio tabungan, tren bulan lalu, hari terboros" },
+  heatmap: { emoji: "🗓️", title: "Kalender Pengeluaran Harian", desc: "Peta intensitas jajan tgl 1–31" },
+  cashflow: { emoji: "🌊", title: "Grafik Arus Kas", desc: "Pemasukan vs pengeluaran (Area / Batang)" },
+  category: { emoji: "🍩", title: "Donut & Rincian Kategori", desc: "Breakdown pengeluaran & pemasukan" },
+  wallets: { emoji: "👛", title: "Pengeluaran per Dompet", desc: "Porsi pemakaian BCA, DANA, Tunai, dll" },
+  merchants: { emoji: "🏪", title: "Merchant Teratas", desc: "Tempat paling sering transaksi bulan ini" },
+  compare: { emoji: "📈", title: "Dibanding Bulan Lalu", desc: "Perbandingan kategori MoM" },
+  progress: { emoji: "🎯", title: "Progress Budget & Goal", desc: "Ringkasan target keuangan bulan ini" },
+  export: { emoji: "📄", title: "Ekspor Laporan Bulanan", desc: "Unduh PDF / CSV laporan resmi" },
+};
+const STATS_TAB_GROUPS = {
+  flow: ["insights", "cashflow", "heatmap"],
+  category: ["category", "wallets", "merchants", "compare"],
+  target: ["progress", "export"],
+};
+
+function sanitizeStatsPrefs(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const validSet = new Set(DEFAULT_STATS_SECTIONS);
+  const rawOrder = Array.isArray(src.sectionOrder) ? src.sectionOrder : [];
+  const seen = new Set();
+  const sectionOrder = [];
+  rawOrder.forEach((id) => { if (validSet.has(id) && !seen.has(id)) { seen.add(id); sectionOrder.push(id); } });
+  DEFAULT_STATS_SECTIONS.forEach((id) => { if (!seen.has(id)) sectionOrder.push(id); });
+  const rawEnabled = Array.isArray(src.enabledSections) ? src.enabledSections.filter((id) => validSet.has(id)) : DEFAULT_STATS_SECTIONS;
+  return {
+    useTabs: !!src.useTabs,
+    useBarChart: !!src.useBarChart,
+    showHeroSavingsRing: src.showHeroSavingsRing !== false,
+    enabledSections: rawEnabled.length > 0 ? [...new Set(rawEnabled)] : [...DEFAULT_STATS_SECTIONS],
+    sectionOrder,
+  };
+}
+
+function loadStatsPrefs() {
+  try { return sanitizeStatsPrefs(JSON.parse(localStorage.getItem(LS_STATS_PREFS) || "null")); }
+  catch (e) { return sanitizeStatsPrefs(null); }
+}
+function saveStatsPrefs() {
+  state.statsPrefs = sanitizeStatsPrefs(state.statsPrefs);
+  try { localStorage.setItem(LS_STATS_PREFS, JSON.stringify(state.statsPrefs)); } catch (e) { /* abaikan */ }
+}
 
 const API_TIMEOUT_MS = 45000;
 const HOME_LIST_LIMIT = 30;
@@ -87,6 +135,10 @@ const state = {
   month: currentYM(), // bulan untuk Riwayat & Statistik
   budgetMonth: currentYM(),
   gran: "harian",
+  statsTab: "flow",
+  statsCatType: "EXPENSE",
+  statsSelectedDay: null,
+  statsPrefs: loadStatsPrefs(),
   home: { tipe: null, akun: null, q: "" },
   hist: { tipe: null, akun: null, q: "" },
   hide: localStorage.getItem(LS_HIDE) === "1",
@@ -1096,17 +1148,221 @@ function buildCashflowPoints() {
   return daily.map((b) => ({ label: String(b.day), income: b.income, expense: b.expense }));
 }
 
+function categoryTotals(ym, wantIncome = false) {
+  const by = {};
+  monthTx(ym).filter((t) => !isTransfer(t) && (wantIncome ? isIncome(t) : isExpense(t))).forEach((t) => {
+    const k = categoryKey(t.kategori);
+    by[k] = (by[k] || 0) + t.jumlah;
+  });
+  return by;
+}
+
+function isStatsSecVisible(id) {
+  const prefs = state.statsPrefs || loadStatsPrefs();
+  if (!prefs.enabledSections.includes(id)) return false;
+  if (!prefs.useTabs) return true;
+  const group = STATS_TAB_GROUPS[state.statsTab || "flow"] || STATS_TAB_GROUPS.flow;
+  return group.includes(id);
+}
+
+function applyStatsPreset(preset) {
+  const base = loadStatsPrefs();
+  let next;
+  if (preset === "web") {
+    next = { ...base, useTabs: false, useBarChart: false, showHeroSavingsRing: false, enabledSections: ["cashflow", "category", "merchants", "compare"] };
+  } else if (preset === "health") {
+    next = { ...base, useTabs: true, useBarChart: false, showHeroSavingsRing: true, enabledSections: ["insights", "cashflow", "heatmap", "category", "progress", "export"] };
+  } else if (preset === "pro") {
+    next = { ...base, useTabs: false, useBarChart: true, showHeroSavingsRing: true, enabledSections: [...DEFAULT_STATS_SECTIONS] };
+  } else {
+    next = sanitizeStatsPrefs(null);
+  }
+  state.statsPrefs = sanitizeStatsPrefs(next);
+  saveStatsPrefs();
+}
+
 function renderStats() {
-  const totals = monthTotals(state.month);
-  document.getElementById("statsPills").innerHTML = `
-    <div class="pill"><span class="pill-ico"><svg class="ico"><use href="#i-up"/></svg></span><div><div class="pill-label">Pemasukan</div><div class="pill-val">${esc(fmtRp(totals.income))}</div></div></div>
-    <div class="pill"><span class="pill-ico"><svg class="ico"><use href="#i-down"/></svg></span><div><div class="pill-label">Pengeluaran</div><div class="pill-val">${esc(fmtRp(totals.expense))}</div></div></div>
-    <div class="pill"><span class="pill-ico"><svg class="ico"><use href="#i-sparkle"/></svg></span><div><div class="pill-label">Selisih</div><div class="pill-val">${esc(fmtRp(totals.net))}</div></div></div>`;
+  state.statsPrefs = sanitizeStatsPrefs(state.statsPrefs);
+  const prefs = state.statsPrefs;
+  if (state.statsSelectedDay && ymOf(state.statsSelectedDay) !== state.month) state.statsSelectedDay = null;
+
+  renderStatsHero(prefs);
+
+  const tabWrap = document.getElementById("statsTabWrap");
+  if (tabWrap) {
+    tabWrap.classList.toggle("hidden", !prefs.useTabs);
+    tabWrap.querySelectorAll("[data-stats-tab]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.statsTab === state.statsTab);
+    });
+  }
+
   document.querySelectorAll("#granSeg .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.gran === state.gran));
-  renderCashflow();
-  renderCategory();
-  renderTopMerchants();
-  renderCompare();
+  document.querySelectorAll("#cashflowTypeSeg .seg-btn").forEach((b) => {
+    b.classList.toggle("active", (b.dataset.chartType === "bar") === prefs.useBarChart);
+  });
+  document.querySelectorAll("#catKindSeg .seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.catKind === state.statsCatType);
+  });
+
+  const grid = document.getElementById("statsGrid");
+  if (grid) {
+    prefs.sectionOrder.forEach((id) => {
+      const sec = grid.querySelector(`[data-stats-sec="${id}"]`);
+      if (sec) {
+        sec.classList.toggle("hidden", !isStatsSecVisible(id));
+        grid.appendChild(sec);
+      }
+    });
+  }
+
+  if (isStatsSecVisible("insights")) renderStatsInsights();
+  if (isStatsSecVisible("heatmap")) renderStatsHeatmap();
+  if (isStatsSecVisible("cashflow")) renderCashflow();
+  if (isStatsSecVisible("category")) renderCategory();
+  if (isStatsSecVisible("wallets")) renderStatsWallets();
+  if (isStatsSecVisible("merchants")) renderTopMerchants();
+  if (isStatsSecVisible("compare")) renderCompare();
+  if (isStatsSecVisible("progress")) renderStatsProgress();
+  if (isStatsSecVisible("export")) {
+    const sub = document.getElementById("statsExportSub");
+    const cnt = monthTx(state.month).length;
+    if (sub) sub.textContent = `Laporan ${monthLabel(state.month)} • ${cnt} transaksi siap diunduh PDF / CSV`;
+  }
+}
+
+function renderStatsHero(prefs) {
+  const el = document.getElementById("statsHeroSub");
+  if (!el) return;
+  const totals = monthTotals(state.month);
+  const prevTotals = monthTotals(addMonths(state.month, -1));
+  const momPct = prevTotals.expense > 0 ? ((totals.expense - prevTotals.expense) / prevTotals.expense) * 100 : null;
+  const momText = momPct === null ? "" : `${momPct > 0 ? "▲" : momPct < 0 ? "▼" : "•"} ${Math.abs(momPct).toFixed(1)}% vs bln lalu`;
+
+  if (!prefs.showHeroSavingsRing) {
+    el.innerHTML = `<div class="hero-pills three">
+      <div class="pill"><span class="pill-ico"><svg class="ico"><use href="#i-up"/></svg></span><div><div class="pill-label">Pemasukan</div><div class="pill-val">${esc(fmtRp(totals.income))}</div></div></div>
+      <div class="pill"><span class="pill-ico"><svg class="ico"><use href="#i-down"/></svg></span><div><div class="pill-label">Pengeluaran</div><div class="pill-val">${esc(fmtRp(totals.expense))}</div></div></div>
+      <div class="pill"><span class="pill-ico"><svg class="ico"><use href="#i-sparkle"/></svg></span><div><div class="pill-label">Selisih</div><div class="pill-val">${esc(fmtRp(totals.net))}</div></div></div>
+    </div>`;
+    return;
+  }
+
+  const rawRate = totals.income > 0 ? ((totals.income - totals.expense) / totals.income) * 100 : 0;
+  const rateClamped = clamp(rawRate, 0, 100);
+  const r = 30;
+  const circ = 2 * Math.PI * r;
+  const dashOffset = circ * (1 - rateClamped / 100);
+  const ringColor = rawRate >= 20 ? "#86EFAC" : rawRate > 0 ? "#FDE047" : "#FDA4AF";
+
+  el.innerHTML = `
+    <div class="stats-ring-hero">
+      <div class="stats-ring-svg" aria-hidden="true">
+        <svg viewBox="0 0 76 76">
+          <circle cx="38" cy="38" r="${r}" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="8"/>
+          <circle cx="38" cy="38" r="${r}" fill="none" stroke="${ringColor}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"/>
+        </svg>
+        <div class="stats-ring-center"><b>${totals.income > 0 ? Math.round(clamp(rawRate, -99, 100)) : 0}%</b><small>Tabung</small></div>
+      </div>
+      <div class="stats-ring-meta">
+        <div class="stats-ring-row"><span>📈 Pemasukan</span><b>${esc(fmtRp(totals.income))}</b></div>
+        <div class="stats-ring-row"><span>📉 Pengeluaran</span><b>${esc(fmtRp(totals.expense))}</b></div>
+        <div class="stats-ring-row"><span>✨ Selisih Bersih</span><b>${esc(fmtRp(totals.net))}</b></div>
+        ${momText ? `<span class="stats-mom-pill">${esc(momText)}</span>` : ""}
+      </div>
+    </div>`;
+}
+
+function renderStatsInsights() {
+  const el = document.getElementById("statsInsights");
+  if (!el) return;
+  const rows = monthTx(state.month).filter((t) => !isTransfer(t));
+  if (rows.length === 0) {
+    el.innerHTML = emptyState("💡", `Belum ada transaksi di ${monthLabel(state.month)} untuk dianalisis.`);
+    return;
+  }
+  const totals = monthTotals(state.month);
+  const prevTotals = monthTotals(addMonths(state.month, -1));
+  const [y, m] = state.month.split("-").map(Number);
+  const now = new Date();
+  const curYm = currentYM();
+  const activeDays = state.month === curYm ? now.getDate() : daysInMonth(y, m);
+  const avgDaily = activeDays > 0 ? totals.expense / activeDays : 0;
+
+  const byDay = new Map();
+  const byDow = [0, 0, 0, 0, 0, 0, 0];
+  rows.filter(isExpense).forEach((t) => {
+    byDay.set(t.tanggal, (byDay.get(t.tanggal) || 0) + t.jumlah);
+    const p = parseIso(t.tanggal);
+    if (p) byDow[(new Date(p.y, p.m - 1, p.d).getDay() + 6) % 7] += t.jumlah;
+  });
+  let peakDay = null;
+  let peakDayAmt = 0;
+  byDay.forEach((v, k) => { if (v > peakDayAmt) { peakDayAmt = v; peakDay = k; } });
+  let peakDow = 0;
+  byDow.forEach((v, idx) => { if (v > byDow[peakDow]) peakDow = idx; });
+
+  const momDiff = totals.expense - prevTotals.expense;
+  const momPct = prevTotals.expense > 0 ? ((momDiff / prevTotals.expense) * 100) : null;
+  const topCat = Object.entries(categoryTotals(state.month, false)).sort((a, b) => b[1] - a[1])[0];
+  const saveRate = totals.income > 0 ? Math.round(((totals.income - totals.expense) / totals.income) * 100) : 0;
+
+  let tip = "Catat pemasukan dan pengeluaranmu secara rutin agar tren keuangan makin terbaca.";
+  if (totals.expense > totals.income && totals.income > 0) {
+    tip = `⚠️ Pengeluaran bulan ini melebihi pemasukan sebesar ${fmtRp(totals.expense - totals.income)}. Cek kategori ${topCat ? topCat[0] : "terbesar"}.`;
+  } else if (saveRate >= 30) {
+    tip = `🌟 Mantap! Rasio tabungan ${saveRate}% melampaui target ideal 20%. Pertahankan ritme ini!`;
+  } else if (topCat) {
+    const share = totals.expense > 0 ? Math.round((topCat[1] / totals.expense) * 100) : 0;
+    tip = `💡 Pengeluaran terbesar ada di kategori ${topCat[0]} (${share}% dari total jajan bulan ini).`;
+  }
+
+  el.innerHTML = `
+    <div class="insight-grid">
+      <div class="insight-tile"><div class="lbl">Rata-rata Harian</div><div class="val">${esc(fmtRp(avgDaily))}/hr</div></div>
+      <div class="insight-tile"><div class="lbl">Hari Terboros</div><div class="val">${peakDay ? esc(dateLabel(peakDay, true)) : "—"}</div><div class="lbl">${peakDayAmt > 0 ? esc(fmtRp(peakDayAmt)) : "Belum ada"}</div></div>
+      <div class="insight-tile"><div class="lbl">Hari Favorit Jajan</div><div class="val">${byDow[peakDow] > 0 ? WEEKDAYS[peakDow] : "—"}</div></div>
+      <div class="insight-tile"><div class="lbl">Tren vs Bulan Lalu</div><div class="val ${momDiff > 0 ? "amt-out" : "amt-in"}">${momPct === null ? "Baru" : `${momPct > 0 ? "▲" : momPct < 0 ? "▼" : "•"} ${Math.abs(momPct).toFixed(1)}%`}</div></div>
+    </div>
+    <div class="insight-tip">${esc(tip)}</div>`;
+}
+
+function renderStatsHeatmap() {
+  const el = document.getElementById("statsHeatmap");
+  const clearBtn = document.getElementById("heatmapClearBtn");
+  if (!el) return;
+  const [y, m] = state.month.split("-").map(Number);
+  const days = daysInMonth(y, m);
+  const offset = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+
+  const byDay = new Map();
+  monthTx(state.month).filter((t) => isExpense(t) && !isTransfer(t)).forEach((t) => {
+    byDay.set(t.tanggal, (byDay.get(t.tanggal) || 0) + t.jumlah);
+  });
+  const vals = [...byDay.values()];
+  const maxV = vals.length > 0 ? Math.max(...vals) : 0;
+
+  let cells = "";
+  for (let i = 0; i < offset; i++) cells += `<div class="heat-cell empty" aria-hidden="true"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const iso = isoOf(y, m, d);
+    const v = byDay.get(iso) || 0;
+    const ratio = maxV > 0 ? v / maxV : 0;
+    const lv = v <= 0 ? "" : ratio >= 0.75 ? "lv4" : ratio >= 0.45 ? "lv3" : ratio >= 0.18 ? "lv2" : "lv1";
+    const sel = state.statsSelectedDay === iso ? "selected" : "";
+    cells += `<button type="button" class="heat-cell ${lv} ${sel}" data-heat-day="${iso}" title="${dateLabel(iso, true)}: ${fmtRp(v)}">${d}</button>`;
+  }
+
+  const selAmt = state.statsSelectedDay ? (byDay.get(state.statsSelectedDay) || 0) : 0;
+  if (clearBtn) clearBtn.classList.toggle("hidden", !state.statsSelectedDay);
+
+  el.innerHTML = `
+    <div class="heat-dow"><span>Sn</span><span>Sl</span><span>Rb</span><span>Km</span><span>Jm</span><span>Sb</span><span>Mg</span></div>
+    <div class="heat-grid">${cells}</div>
+    <div class="heat-legend">
+      <span>Max harian: <b>${maxV > 0 ? esc(fmtRp(maxV)) : "—"}</b></span>
+      <span class="heat-scale"><span>Ringan</span><span class="heat-dot"></span><span class="heat-dot lv1"></span><span class="heat-dot lv2"></span><span class="heat-dot lv3"></span><span class="heat-dot lv4"></span><span>Tinggi</span></span>
+    </div>
+    ${state.statsSelectedDay ? `<div class="heat-detail"><span>📅 ${esc(dateLabel(state.statsSelectedDay, true))}</span><b>${esc(fmtRp(selAmt))}</b></div>` : ""}`;
 }
 
 function chartReady() { return typeof window.Chart !== "undefined"; }
@@ -1129,13 +1385,25 @@ function renderCashflow() {
   const grid = cssVar("--chart-grid");
   const inc = cssVar("--chart-income");
   const exp = cssVar("--chart-expense");
-  const data = {
-    labels: pts.map((p) => p.label),
-    datasets: [
-      { label: "Pemasukan", data: pts.map((p) => p.income), borderColor: inc, backgroundColor: inc + "26", fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2.5 },
-      { label: "Pengeluaran", data: pts.map((p) => p.expense), borderColor: exp, backgroundColor: exp + "22", fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2.5 },
-    ],
-  };
+  const wantBar = !!(state.statsPrefs && state.statsPrefs.useBarChart);
+  const targetType = wantBar ? "bar" : "line";
+
+  const data = wantBar
+    ? {
+        labels: pts.map((p) => p.label),
+        datasets: [
+          { label: "Pemasukan", data: pts.map((p) => p.income), backgroundColor: inc + "CC", borderRadius: 6, maxBarThickness: 18 },
+          { label: "Pengeluaran", data: pts.map((p) => p.expense), backgroundColor: exp + "CC", borderRadius: 6, maxBarThickness: 18 },
+        ],
+      }
+    : {
+        labels: pts.map((p) => p.label),
+        datasets: [
+          { label: "Pemasukan", data: pts.map((p) => p.income), borderColor: inc, backgroundColor: inc + "26", fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2.5 },
+          { label: "Pengeluaran", data: pts.map((p) => p.expense), borderColor: exp, backgroundColor: exp + "22", fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2.5 },
+        ],
+      };
+
   const opts = {
     responsive: true,
     maintainAspectRatio: false,
@@ -1149,19 +1417,27 @@ function renderCashflow() {
       y: { ticks: { color: tick, callback: (v) => (state.hide ? "•••" : shortRp(v)), font: { family: "Nunito" } }, grid: { color: grid }, beginAtZero: true },
     },
   };
+  if (cashflowChart && cashflowChart.config.type !== targetType) {
+    cashflowChart.destroy();
+    cashflowChart = null;
+  }
   if (cashflowChart) { cashflowChart.data = data; cashflowChart.options = opts; cashflowChart.update(); }
-  else cashflowChart = new window.Chart(canvas, { type: "line", data, options: opts });
+  else cashflowChart = new window.Chart(canvas, { type: targetType, data, options: opts });
 }
 
 function renderCategory() {
   const canvas = document.getElementById("categoryChart");
   const listEl = document.getElementById("categoryList");
-  const entries = Object.entries(expenseByCategory(state.month)).sort((a, b) => b[1] - a[1]);
+  const titleEl = document.getElementById("statsCatTitle");
+  const wantIncome = state.statsCatType === "INCOME";
+  if (titleEl) titleEl.textContent = wantIncome ? "🍩 Pemasukan per Kategori" : "🍩 Pengeluaran per Kategori";
+
+  const entries = Object.entries(categoryTotals(state.month, wantIncome)).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((a, e) => a + e[1], 0);
   if (entries.length === 0) {
     if (categoryChart) { categoryChart.destroy(); categoryChart = null; }
     canvas.parentElement.classList.add("hidden");
-    listEl.innerHTML = emptyState("🍩", "Belum ada pengeluaran di bulan ini.");
+    listEl.innerHTML = emptyState("🍩", wantIncome ? "Belum ada pemasukan di bulan ini." : "Belum ada pengeluaran di bulan ini.");
     return;
   }
   listEl.innerHTML = entries.slice(0, 8).map(([name, val], i) => {
@@ -1188,6 +1464,38 @@ function renderCategory() {
   };
   if (categoryChart) { categoryChart.data = data; categoryChart.options = opts; categoryChart.update(); }
   else categoryChart = new window.Chart(canvas, { type: "doughnut", data, options: opts });
+}
+
+function renderStatsWallets() {
+  const el = document.getElementById("statsWallets");
+  if (!el) return;
+  const by = new Map();
+  monthTx(state.month).filter((t) => isExpense(t) && !isTransfer(t)).forEach((t) => {
+    const k = String(t.akun || "Tunai").trim() || "Tunai";
+    const cur = by.get(k) || { akun: k, total: 0, count: 0 };
+    cur.total += t.jumlah;
+    cur.count += 1;
+    by.set(k, cur);
+  });
+  const list = [...by.values()].sort((a, b) => b.total - a.total);
+  const sum = list.reduce((a, x) => a + x.total, 0);
+  if (list.length === 0) {
+    el.innerHTML = emptyState("👛", "Belum ada pengeluaran tercatat di dompet bulan ini.");
+    return;
+  }
+  el.innerHTML = list.slice(0, 8).map((w) => {
+    const st = accountStyle(w.akun);
+    const pct = sum > 0 ? (w.total / sum) * 100 : 0;
+    return `
+      <div class="cat-row">
+        <span class="emo" style="--c:${st.c};--cbg:${st.bg}" aria-hidden="true">${st.emoji}</span>
+        <div>
+          <div class="name">${esc(w.akun)} <small class="muted" style="font-weight:700">· ${w.count}×</small></div>
+          <div class="bar"><span style="width:${pct.toFixed(1)}%;background:${st.from}"></span></div>
+        </div>
+        <div class="val">${esc(fmtRp(w.total))}<small>${pct.toFixed(0)}%</small></div>
+      </div>`;
+  }).join("");
 }
 
 function renderTopMerchants() {
@@ -1237,6 +1545,138 @@ function renderCompare() {
         <div class="rank-val">${esc(fmtRp(b))}${change}</div>
       </div>`;
   }).join("");
+}
+
+function renderStatsProgress() {
+  const el = document.getElementById("statsProgress");
+  if (!el) return;
+  const budgets = state.budgets.filter((b) => b.bulan === state.month && b.enabled !== false).map(budgetView).sort((a, b) => b.pct - a.pct);
+  const goals = state.goals.filter((g) => g.enabled !== false).map(goalView);
+  if (budgets.length === 0 && goals.length === 0) {
+    el.innerHTML = emptyState("🎯", "Belum ada budget atau goal aktif di bulan ini.");
+    return;
+  }
+  const budgetHtml = budgets.slice(0, 4).map((v) => `
+    <div class="stats-prog-mini">
+      <div class="stats-prog-top"><span>${categoryStyle(v.b.kategori).emoji} Budget ${esc(v.b.kategori)}</span><span style="color:${STATUS_COLOR[v.status]}">${Math.round(v.pct)}%</span></div>
+      <div class="bar"><span style="width:${clamp(v.pct, 0, 100).toFixed(1)}%;background:${STATUS_COLOR[v.status]}"></span></div>
+      <div class="stats-prog-sub"><span>${esc(fmtRp(v.spent))} / ${esc(fmtRp(v.limit))}</span><span>Sisa ${esc(fmtRp(Math.max(0, v.sisa)))}</span></div>
+    </div>`).join("");
+  const goalHtml = goals.slice(0, 4).map((v) => {
+    const color = v.status === "done" ? "#10B981" : "linear-gradient(90deg,#EC4899,#A04FD6)";
+    return `
+      <div class="stats-prog-mini">
+        <div class="stats-prog-top"><span>${v.status === "done" ? "🏆" : "🎯"} Goal ${esc(v.g.name)}</span><span>${v.pct.toFixed(0)}%</span></div>
+        <div class="bar"><span style="width:${clamp(v.pct, 0, 100).toFixed(1)}%;background:${color}"></span></div>
+        <div class="stats-prog-sub"><span>${esc(fmtRp(v.saldo))} / ${esc(fmtRp(v.target))}</span><span>${GOAL_STATUS[v.status].label}</span></div>
+      </div>`;
+  }).join("");
+  el.innerHTML = `<div class="stats-prog-sec">${budgetHtml}${goalHtml}</div>`;
+}
+
+function openStatsConfigSheet() {
+  const draw = (body) => {
+    const p = sanitizeStatsPrefs(state.statsPrefs);
+    state.statsPrefs = p;
+    const enabledSet = new Set(p.enabledSections);
+    body.innerHTML = `
+      <div class="field-label">Preset Cepat</div>
+      <div class="preset-row">
+        <button class="preset-btn" type="button" data-stats-preset="all"><b>✨ Semua Lengkap</b><span>9 widget aktif + Ring Hero</span></button>
+        <button class="preset-btn" type="button" data-stats-preset="web"><b>🌐 Minimalis Web</b><span>Arus Kas, Donut, Merchant, MoM</span></button>
+        <button class="preset-btn" type="button" data-stats-preset="health"><b>💚 Fokus Health</b><span>Tab 3 bagian + Ring + Insight</span></button>
+        <button class="preset-btn" type="button" data-stats-preset="pro"><b>📊 Pro Analitik</b><span>Grafik batang + Kalender penuh</span></button>
+      </div>
+      <div class="field-label">Gaya Tampilan &amp; Grafik</div>
+      <label class="switch-row">
+        <div class="switch-text"><div class="switch-title">Mode 3 Tab Statistik</div><div class="switch-sub">Pisahkan jadi tab Arus Kas, Kategori &amp; Target</div></div>
+        <span class="switch"><input type="checkbox" id="cfgStatsTabs" ${p.useTabs ? "checked" : ""} /><span class="track"></span></span>
+      </label>
+      <label class="switch-row">
+        <div class="switch-text"><div class="switch-title">Grafik Batang Arus Kas</div><div class="switch-sub">Matikan untuk grafik garis / area lembut</div></div>
+        <span class="switch"><input type="checkbox" id="cfgStatsBar" ${p.useBarChart ? "checked" : ""} /><span class="track"></span></span>
+      </label>
+      <label class="switch-row">
+        <div class="switch-text"><div class="switch-title">Cincin Rasio Tabungan di Hero</div><div class="switch-sub">Tampilkan % tabungan &amp; tren bulan lalu di header</div></div>
+        <span class="switch"><input type="checkbox" id="cfgStatsRing" ${p.showHeroSavingsRing ? "checked" : ""} /><span class="track"></span></span>
+      </label>
+      <div class="field-label" style="margin-top:12px">Aktifkan &amp; Urutkan Widget (${p.enabledSections.length}/${p.sectionOrder.length})</div>
+      <div>
+        ${p.sectionOrder.map((id, idx) => {
+          const meta = STATS_SECTIONS_META[id] || { emoji: "📊", title: id, desc: "" };
+          const on = enabledSet.has(id);
+          return `
+            <div class="stats-cfg-row">
+              <span class="emo" aria-hidden="true">${meta.emoji}</span>
+              <div class="meta"><b>${esc(meta.title)}</b><span>${esc(meta.desc)}</span></div>
+              <div class="stats-cfg-arrows">
+                <button class="icon-btn icon-btn-sm" type="button" data-stats-move="${idx}:-1" ${idx === 0 ? "disabled" : ""} aria-label="Naikkan">▲</button>
+                <button class="icon-btn icon-btn-sm" type="button" data-stats-move="${idx}:1" ${idx === p.sectionOrder.length - 1 ? "disabled" : ""} aria-label="Turunkan">▼</button>
+              </div>
+              <span class="switch"><input type="checkbox" data-stats-sec-toggle="${id}" ${on ? "checked" : ""} /><span class="track"></span></span>
+            </div>`;
+        }).join("")}
+      </div>
+      <div class="form-actions" style="margin-top:14px">
+        <button class="btn btn-ghost" type="button" id="cfgStatsReset">↺ Default</button>
+        <button class="btn btn-primary" type="button" data-sheet-close>Selesai</button>
+      </div>`;
+
+    body.querySelectorAll("[data-stats-preset]").forEach((btn) => btn.addEventListener("click", () => {
+      applyStatsPreset(btn.dataset.statsPreset);
+      renderStats();
+      draw(body);
+      toast("Preset Statistik diterapkan ✨");
+    }));
+    body.querySelector("#cfgStatsTabs").addEventListener("change", (e) => {
+      state.statsPrefs.useTabs = e.target.checked;
+      saveStatsPrefs();
+      renderStats();
+    });
+    body.querySelector("#cfgStatsBar").addEventListener("change", (e) => {
+      state.statsPrefs.useBarChart = e.target.checked;
+      saveStatsPrefs();
+      renderStats();
+    });
+    body.querySelector("#cfgStatsRing").addEventListener("change", (e) => {
+      state.statsPrefs.showHeroSavingsRing = e.target.checked;
+      saveStatsPrefs();
+      renderStats();
+    });
+    body.querySelectorAll("[data-stats-sec-toggle]").forEach((chk) => chk.addEventListener("change", () => {
+      const id = chk.dataset.statsSecToggle;
+      const cur = new Set(state.statsPrefs.enabledSections);
+      if (chk.checked) cur.add(id);
+      else if (cur.size > 1) cur.delete(id);
+      else {
+        chk.checked = true;
+        return toast("Minimal 1 widget statistik harus aktif.", "error");
+      }
+      state.statsPrefs.enabledSections = [...cur];
+      saveStatsPrefs();
+      renderStats();
+      draw(body);
+    }));
+    body.querySelectorAll("[data-stats-move]").forEach((btn) => btn.addEventListener("click", () => {
+      const [idxStr, deltaStr] = btn.dataset.statsMove.split(":");
+      const idx = Number(idxStr);
+      const target = idx + Number(deltaStr);
+      const arr = state.statsPrefs.sectionOrder.slice();
+      if (target < 0 || target >= arr.length) return;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      state.statsPrefs.sectionOrder = arr;
+      saveStatsPrefs();
+      renderStats();
+      draw(body);
+    }));
+    body.querySelector("#cfgStatsReset").addEventListener("click", () => {
+      applyStatsPreset("all");
+      renderStats();
+      draw(body);
+      toast("Pengaturan Statistik dikembalikan ke default ↺");
+    });
+  };
+  openSheet("Atur Tampilan Statistik ⚙️", "<div></div>", draw);
 }
 
 // ---------------- Money: hutang, budget, goal, berulang ----------------
@@ -3352,6 +3792,10 @@ function bindEvents() {
   document.getElementById("hideBtn").addEventListener("click", toggleHide);
   const openWalletsBtn = document.getElementById("openWalletsBtn");
   if (openWalletsBtn) openWalletsBtn.addEventListener("click", () => openWalletSheet());
+  const statsConfigBtn = document.getElementById("statsConfigBtn");
+  if (statsConfigBtn) statsConfigBtn.addEventListener("click", () => openStatsConfigSheet());
+  const heatmapClearBtn = document.getElementById("heatmapClearBtn");
+  if (heatmapClearBtn) heatmapClearBtn.addEventListener("click", () => { state.statsSelectedDay = null; renderStatsHeatmap(); });
   document.getElementById("fabAdd").addEventListener("click", openAddMenu);
   document.getElementById("downloadBtn").addEventListener("click", (e) => {
     e.stopPropagation();
@@ -3365,7 +3809,7 @@ function bindEvents() {
     if (!target.closest("#downloadMenu") && !target.closest("#downloadBtn")) {
       document.getElementById("downloadMenu").classList.add("hidden");
     }
-    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-debt-del],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-add]");
+    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-debt-del],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-stats-tab],[data-chart-type],[data-cat-kind],[data-heat-day],[data-add]");
     if (!el) return;
     const d = el.dataset;
     if (d.sheetClose !== undefined) return closeSheet();
@@ -3402,6 +3846,10 @@ function bindEvents() {
     }
     if (d.themePick) return setTheme(d.themePick);
     if (d.gran) { state.gran = d.gran; return renderStats(); }
+    if (d.statsTab) { state.statsTab = d.statsTab; return renderStats(); }
+    if (d.chartType) { state.statsPrefs.useBarChart = d.chartType === "bar"; saveStatsPrefs(); return renderStats(); }
+    if (d.catKind) { state.statsCatType = d.catKind; return renderStats(); }
+    if (d.heatDay) { state.statsSelectedDay = state.statsSelectedDay === d.heatDay ? null : d.heatDay; return renderStatsHeatmap(); }
     switch (d.action) {
       case "add": return openAddMenu();
       case "add-debt": return openDebtForm(null, state.debtTab);

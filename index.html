@@ -312,41 +312,115 @@
                 <span class="sparkle s2" aria-hidden="true">✦</span>
                 <div class="hero-title-row">
                     <h1>📊 Statistik</h1>
-                    <div class="month-switch">
-                        <button class="hero-btn" type="button" data-month="-1" aria-label="Bulan sebelumnya"><svg class="ico"><use href="#i-back"/></svg></button>
-                        <span class="month-label" data-month-label></span>
-                        <button class="hero-btn" type="button" data-month="1" aria-label="Bulan berikutnya"><svg class="ico"><use href="#i-next"/></svg></button>
+                    <div class="stats-hero-ctrls">
+                        <div class="month-switch">
+                            <button class="hero-btn" type="button" data-month="-1" aria-label="Bulan sebelumnya"><svg class="ico"><use href="#i-back"/></svg></button>
+                            <span class="month-label" data-month-label></span>
+                            <button class="hero-btn" type="button" data-month="1" aria-label="Bulan berikutnya"><svg class="ico"><use href="#i-next"/></svg></button>
+                        </div>
+                        <button class="hero-btn hero-btn-pill" type="button" id="statsConfigBtn" title="Atur tampilan &amp; widget Statistik" aria-label="Atur Tampilan Statistik">
+                            <svg class="ico"><use href="#i-gear"/></svg><span>Atur</span>
+                        </button>
                     </div>
                 </div>
-                <div class="hero-pills three" id="statsPills"></div>
+                <div id="statsHeroSub"></div>
             </header>
-            <div class="page-body grid-2 stats-grid">
-                <section class="card stats-cashflow">
+            <div class="stats-tabs-wrap hidden" id="statsTabWrap">
+                <div class="seg seg-full stats-tab-bar" id="statsTabBar">
+                    <button class="seg-btn active" type="button" data-stats-tab="flow">🌊 Arus Kas</button>
+                    <button class="seg-btn" type="button" data-stats-tab="category">🍩 Kategori &amp; Dompet</button>
+                    <button class="seg-btn" type="button" data-stats-tab="target">🎯 Target &amp; Export</button>
+                </div>
+            </div>
+            <div class="page-body grid-2 stats-grid" id="statsGrid">
+                <section class="card stats-full" data-stats-sec="insights">
                     <div class="card-head">
+                        <div>
+                            <h2>💡 Ringkasan &amp; Insight Pintar</h2>
+                            <div class="card-sub" id="statsInsightSub">Analisis pola pemasukan &amp; pengeluaran bulan ini</div>
+                        </div>
+                    </div>
+                    <div id="statsInsights"></div>
+                </section>
+                <section class="card" data-stats-sec="heatmap">
+                    <div class="card-head">
+                        <div>
+                            <h2>🗓️ Kalender Pengeluaran</h2>
+                            <div class="card-sub">Ketuk tanggal untuk melihat total harian</div>
+                        </div>
+                        <button class="link-btn hidden" type="button" id="heatmapClearBtn">Reset tgl</button>
+                    </div>
+                    <div id="statsHeatmap"></div>
+                </section>
+                <section class="card stats-cashflow" data-stats-sec="cashflow">
+                    <div class="card-head stats-card-head-wrap">
                         <h2>🌊 Arus Kas</h2>
-                        <div class="seg seg-sm" id="granSeg">
-                            <button class="seg-btn active" type="button" data-gran="harian">Harian</button>
-                            <button class="seg-btn" type="button" data-gran="mingguan">Mingguan</button>
-                            <button class="seg-btn" type="button" data-gran="bulanan">Bulanan</button>
+                        <div class="stats-chart-ctrls">
+                            <div class="seg seg-sm" id="cashflowTypeSeg">
+                                <button class="seg-btn active" type="button" data-chart-type="area">Area</button>
+                                <button class="seg-btn" type="button" data-chart-type="bar">Batang</button>
+                            </div>
+                            <div class="seg seg-sm" id="granSeg">
+                                <button class="seg-btn active" type="button" data-gran="harian">Harian</button>
+                                <button class="seg-btn" type="button" data-gran="mingguan">Mingguan</button>
+                                <button class="seg-btn" type="button" data-gran="bulanan">Bulanan</button>
+                            </div>
                         </div>
                     </div>
                     <div class="chart-box"><canvas id="cashflowChart" aria-label="Grafik arus kas"></canvas></div>
                     <div class="empty hidden" id="cashflowEmpty">Belum ada data di periode ini 🌱</div>
                 </section>
-                <section class="card stats-category">
-                    <div class="card-head"><h2>🍩 Pengeluaran per Kategori</h2></div>
+                <section class="card stats-category" data-stats-sec="category">
+                    <div class="card-head stats-card-head-wrap">
+                        <h2 id="statsCatTitle">🍩 Pengeluaran per Kategori</h2>
+                        <div class="seg seg-sm" id="catKindSeg">
+                            <button class="seg-btn active" type="button" data-cat-kind="EXPENSE">Keluar</button>
+                            <button class="seg-btn" type="button" data-cat-kind="INCOME">Masuk</button>
+                        </div>
+                    </div>
                     <div class="donut-wrap">
-                        <div class="chart-box chart-donut"><canvas id="categoryChart" aria-label="Grafik pengeluaran per kategori"></canvas></div>
+                        <div class="chart-box chart-donut"><canvas id="categoryChart" aria-label="Grafik kategori"></canvas></div>
                         <div class="cat-list" id="categoryList"></div>
                     </div>
                 </section>
-                <section class="card">
+                <section class="card" data-stats-sec="wallets">
+                    <div class="card-head">
+                        <div>
+                            <h2>👛 Pengeluaran per Dompet</h2>
+                            <div class="card-sub">Distribusi pemakaian tiap akun di bulan ini</div>
+                        </div>
+                    </div>
+                    <div id="statsWallets" class="rank-list"></div>
+                </section>
+                <section class="card" data-stats-sec="merchants">
                     <div class="card-head"><h2>🏪 Merchant Teratas</h2></div>
                     <div id="topMerchants" class="rank-list"></div>
                 </section>
-                <section class="card">
+                <section class="card" data-stats-sec="compare">
                     <div class="card-head"><h2>📈 Dibanding Bulan Lalu</h2></div>
                     <div id="compareList" class="rank-list"></div>
+                </section>
+                <section class="card" data-stats-sec="progress">
+                    <div class="card-head">
+                        <div>
+                            <h2>🎯 Progress Budget &amp; Goal</h2>
+                            <div class="card-sub">Pantau target keuangan bulan ini</div>
+                        </div>
+                        <button class="link-btn" type="button" data-goto="money">Kelola →</button>
+                    </div>
+                    <div id="statsProgress"></div>
+                </section>
+                <section class="card stats-full" data-stats-sec="export">
+                    <div class="card-head stats-card-head-wrap">
+                        <div>
+                            <h2>📄 Ekspor Laporan Bulanan</h2>
+                            <div class="card-sub" id="statsExportSub">Simpan ringkasan transaksi &amp; saldo bulan ini</div>
+                        </div>
+                        <div class="stats-export-btns">
+                            <button class="btn btn-soft btn-sm" type="button" data-download="csv">📊 CSV</button>
+                            <button class="btn btn-primary btn-sm" type="button" data-download="pdf">📄 Unduh PDF</button>
+                        </div>
+                    </div>
                 </section>
             </div>
         </section>
