@@ -2938,14 +2938,56 @@ function transferLegs(t, outSumber = "transfer", inSumber = "transfer") {
   ];
 }
 
+function openTxDetail(tx) {
+  const isTrf = isTransfer(tx);
+  const isInc = isIncome(tx);
+  const pair = isTrf ? findTransferPair(tx) : null;
+  const cs = categoryStyle(isTrf ? "Transfer" : tx.kategori);
+  const badgeCls = isTrf ? "badge-info" : isInc ? "badge-ok" : "badge-bad";
+  const badgeText = isTrf ? "Transfer Saldo" : isInc ? "Pemasukan" : "Pengeluaran";
+  const amtCls = isTrf ? "amt-neutral" : isInc ? "amt-in" : "amt-out";
+  const amtText = isTrf ? fmtRp(tx.jumlah) : `${isInc ? "+" : "−"} ${fmtRp(tx.jumlah)}`;
+  const title = tx.merchant || tx.kategori || tx.deskripsi || "(tanpa nama)";
+  const akunHtml = pair && pair.out && pair.inn
+    ? `<span class="acct-tag" style="${acctVars(pair.out.akun)}">${esc(pair.out.akun)}</span> → <span class="acct-tag" style="${acctVars(pair.inn.akun)}">${esc(pair.inn.akun)}</span>`
+    : `<span class="acct-tag" style="${acctVars(tx.akun)}">${esc(tx.akun || "Tunai")}</span>`;
+  const rows = [
+    ["Tanggal", esc(dateLabel(tx.tanggal, true))],
+    tx.jam ? ["Jam", esc(String(tx.jam).slice(0, 5))] : null,
+    ["Akun / Dompet", akunHtml, true],
+    ["Kategori", esc(isTrf ? "Transfer" : categoryKey(tx.kategori))],
+    tx.merchant ? ["Nama / Merchant", esc(tx.merchant)] : null,
+    tx.deskripsi ? ["Catatan", esc(tx.deskripsi)] : null,
+    tx.sumber ? ["Sumber", esc(tx.sumber)] : null,
+  ].filter(Boolean);
+
+  const html = `
+    <div class="tx-detail-hero">
+      <div class="tx-detail-ico" style="--c:${cs.c};--cbg:${cs.bg}" aria-hidden="true">${cs.emoji}</div>
+      <div><span class="badge ${badgeCls}">${badgeText}</span></div>
+      <div class="tx-detail-amt ${amtCls}">${esc(amtText)}</div>
+      <div class="tx-detail-title">${esc(title)}</div>
+    </div>
+    <div class="tx-detail-list">
+      ${rows.map(([k, v, raw]) => `<div class="tx-detail-row"><span>${k}</span><b>${raw ? v : v}</b></div>`).join("")}
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-ghost" data-sheet-close>Tutup</button>
+      <button type="button" class="btn btn-primary" id="txDetailEditBtn"><svg class="ico"><use href="#i-edit"/></svg>Edit</button>
+    </div>`;
+
+  openSheet("Detail Transaksi 🧾", html, (body) => {
+    body.querySelector("#txDetailEditBtn").addEventListener("click", () => {
+      if (pair && pair.out && pair.inn) openTransferForm(pair);
+      else openTxForm({ tx });
+    });
+  });
+}
+
 function openTxById(id) {
   const tx = state.transactions.find((t) => t.id === id);
   if (!tx) return;
-  if (isTransfer(tx)) {
-    const pair = findTransferPair(tx);
-    if (pair && pair.out && pair.inn) return openTransferForm(pair);
-  }
-  openTxForm({ tx });
+  openTxDetail(tx);
 }
 
 // ---------------- Form budget ----------------
