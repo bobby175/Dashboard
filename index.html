@@ -85,6 +85,7 @@
         <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" stroke-width="3"/></symbol>
         <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
         <symbol id="i-shrink" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/></symbol>
+        <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></symbol>
     </svg>
 
     <!-- ============ SETUP / CONNECT ============ -->
@@ -145,6 +146,13 @@
                     <span class="field-label">Webhook Secret</span>
                     <input type="password" id="manualSecret" placeholder="secret kamu" autocomplete="off" />
                 </label>
+                <label class="switch-row">
+                    <div class="switch-text">
+                        <div class="switch-title">Buka langsung Mode Resepsi</div>
+                        <div class="switch-sub">Fokus pencatatan amplop resepsi saat masuk.</div>
+                    </div>
+                    <span class="switch"><input type="checkbox" id="setupReceptionMode" /><span class="track"></span></span>
+                </label>
                 <button class="btn btn-primary btn-block" id="manualBtn" type="button">Hubungkan</button>
             </div>
 
@@ -163,22 +171,24 @@
                 <img src="icons/icon.svg" alt="" width="44" height="44" />
                 <div><b>Catalyst</b><span>Versi PC</span></div>
             </div>
-            <button class="btn btn-primary btn-block side-add" type="button" data-action="add">
-                <svg class="ico"><use href="#i-plus"/></svg>Catat Transaksi <kbd>N</kbd>
+            <button class="btn btn-primary btn-block side-add" type="button" data-action="add" id="sideAddBtn">
+                <svg class="ico"><use href="#i-plus"/></svg><span id="sideAddLabel">Catat Transaksi</span> <kbd>N</kbd>
             </button>
             <nav class="side-nav">
                 <button class="side-link" type="button" data-tab="home"><svg class="ico"><use href="#i-home"/></svg><span>Home</span><kbd>1</kbd></button>
                 <button class="side-link" type="button" data-tab="history"><svg class="ico"><use href="#i-list"/></svg><span>Riwayat</span><kbd>2</kbd></button>
                 <button class="side-link" type="button" data-tab="stats"><svg class="ico"><use href="#i-chart"/></svg><span>Statistik</span><kbd>3</kbd></button>
                 <button class="side-link" type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg><span>Money</span><kbd>4</kbd></button>
-                <button class="side-link" type="button" data-tab="settings"><svg class="ico"><use href="#i-gear"/></svg><span>Pengaturan</span><kbd>5</kbd></button>
+                <button class="side-link" type="button" data-tab="envelopes"><svg class="ico"><use href="#i-gift"/></svg><span>Resepsi</span><kbd>5</kbd></button>
+                <button class="side-link" type="button" data-tab="settings"><svg class="ico"><use href="#i-gear"/></svg><span>Pengaturan</span><kbd>6</kbd></button>
             </nav>
-            <div class="side-quick">
+            <div class="side-quick" id="sideQuickGroup">
                 <span class="side-label">Catat cepat</span>
                 <button class="side-quick-btn" type="button" data-add="voice">🎙️ Suara AI / Cepat</button>
                 <button class="side-quick-btn" type="button" data-add="Pengeluaran">🛍️ Pengeluaran</button>
                 <button class="side-quick-btn" type="button" data-add="Pemasukan">💰 Pemasukan</button>
                 <button class="side-quick-btn" type="button" data-add="transfer">🔁 Pindah saldo</button>
+                <button class="side-quick-btn" type="button" data-add="envelope">💌 Catat Amplop</button>
             </div>
             <div class="side-foot">
                 <div class="side-status" id="sideStatus" aria-live="polite"></div>
@@ -480,6 +490,61 @@
                     </div>
                     <div id="recurringList" class="rec-list"></div>
                 </section>
+                <section class="card span-2" id="moneyEnvelopeCard">
+                    <div class="card-head">
+                        <div>
+                            <h2>💌 Amplop Resepsi</h2>
+                            <p class="card-sub">Pencatatan nama, alamat &amp; nominal amplop acara (terpisah dari saldo keuangan).</p>
+                        </div>
+                        <button class="btn btn-soft btn-sm" type="button" data-goto="envelopes">Buka ›</button>
+                    </div>
+                    <div id="moneyEnvelopeSummary"></div>
+                </section>
+            </div>
+        </section>
+
+        <!-- AMPLOP RESEPSI -->
+        <section class="page hidden" id="page-envelopes" data-page="envelopes">
+            <header class="hero hero-sm">
+                <span class="sparkle s1" aria-hidden="true">✦</span>
+                <span class="sparkle s2" aria-hidden="true">✦</span>
+                <div class="hero-top">
+                    <div class="hero-brand">
+                        <div>
+                            <div class="hero-greet" id="envModeTitle">💌 Amplop Resepsi</div>
+                            <div class="hero-date" id="envModeSub">Terpisah dari saldo &amp; transaksi keuangan</div>
+                        </div>
+                    </div>
+                    <div class="hero-actions">
+                        <button class="hero-btn" id="envHideBtn" type="button" data-action="toggle-hide" aria-label="Sembunyikan nominal" title="Sembunyikan nominal">
+                            <svg class="ico"><use href="#i-eye"/></svg>
+                        </button>
+                        <button class="hero-btn" id="envRefreshBtn" type="button" data-action="refresh" aria-label="Sinkronkan" title="Sinkronkan">
+                            <svg class="ico"><use href="#i-refresh"/></svg>
+                        </button>
+                        <button class="hero-btn" id="envPdfBtn" type="button" data-env-export="pdf" aria-label="Unduh PDF" title="Unduh Rekap PDF">
+                            <svg class="ico"><use href="#i-download"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="hero-label">Total Semua Amplop</div>
+                <div class="hero-balance" id="envTotal">—</div>
+                <div class="env-hero-badges">
+                    <span class="env-pill-badge" id="envCountBadge">👥 0 pemberi</span>
+                    <span class="env-pill-badge" id="envSourceBadge">Tab AmplopResepsi</span>
+                    <button class="env-pill-badge" type="button" data-env-export="csv" style="border:none">📊 CSV</button>
+                </div>
+            </header>
+            <div class="page-body">
+                <div class="env-search-row">
+                    <label class="search-wrap">
+                        <svg class="ico"><use href="#i-search"/></svg>
+                        <input type="search" id="envSearch" class="search" placeholder="Cari nama tamu atau alamat..." aria-label="Cari amplop resepsi" />
+                    </label>
+                    <button class="btn btn-primary" type="button" data-add="envelope"><svg class="ico"><use href="#i-plus"/></svg>Catat</button>
+                </div>
+                <div class="hint hidden" id="envSearchMeta" style="margin-bottom:10px"></div>
+                <div id="envList" class="env-list"></div>
             </div>
         </section>
 
@@ -498,6 +563,7 @@
         <nav class="bottom-nav" aria-label="Navigasi utama">
             <button class="nav-tab active" type="button" data-tab="home"><svg class="ico"><use href="#i-home"/></svg><span>Home</span></button>
             <button class="nav-tab" type="button" data-tab="stats"><svg class="ico"><use href="#i-chart"/></svg><span>Statistik</span></button>
+            <button class="nav-tab hidden" type="button" data-tab="envelopes"><svg class="ico"><use href="#i-gift"/></svg><span>Resepsi</span></button>
             <button class="fab" type="button" id="fabAdd" aria-label="Tambah transaksi"><svg class="ico"><use href="#i-plus"/></svg></button>
             <button class="nav-tab" type="button" data-tab="money"><svg class="ico"><use href="#i-wallet"/></svg><span>Money</span></button>
             <button class="nav-tab" type="button" data-tab="settings"><svg class="ico"><use href="#i-gear"/></svg><span>Pengaturan</span></button>

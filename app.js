@@ -11,7 +11,7 @@
  */
 "use strict";
 
-const APP_VERSION = "3.1.0";
+const APP_VERSION = "3.2.0";
 
 const LS_KEY = "ck_dashboard_config_v1";
 const LS_HIDE = "ck_dashboard_hide";
@@ -21,6 +21,16 @@ const LS_CACHE = "ck_dashboard_cache_v1";
 const LS_NOTIFY = "ck_dashboard_notify";
 const LS_INSTALL_DISMISS = "ck_dashboard_install_dismissed";
 const LS_STATS_PREFS = "ck_dashboard_stats_prefs_v1";
+const LS_RECEPTION_MODE = "ck_dashboard_reception_mode";
+const LS_ENVELOPE_CFG = "ck_dashboard_envelope_cfg";
+
+function loadEnvelopeCfg() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_ENVELOPE_CFG) || "null");
+    if (raw && raw.url && raw.secret) return { url: String(raw.url).trim(), secret: String(raw.secret).trim() };
+  } catch (e) { /* abaikan */ }
+  return null;
+}
 
 const DEFAULT_STATS_SECTIONS = [
   "insights", "heatmap", "cashflow", "category", "wallets", "merchants", "compare", "progress", "export"
@@ -127,6 +137,8 @@ const state = {
   recurring: [],
   debts: [],
   debtPayments: [],
+  envelopes: [],
+  envSearch: "",
   debtTab: "HUTANG",
   debtFilter: "ALL",
   loadedAt: 0,
@@ -139,6 +151,8 @@ const state = {
   statsCatType: "EXPENSE",
   statsSelectedDay: null,
   statsPrefs: loadStatsPrefs(),
+  receptionMode: localStorage.getItem(LS_RECEPTION_MODE) === "1",
+  envCfg: loadEnvelopeCfg(),
   home: { tipe: null, akun: null, q: "" },
   hist: { tipe: null, akun: null, q: "" },
   hide: localStorage.getItem(LS_HIDE) === "1",
@@ -309,14 +323,22 @@ function allAccountNames() {
 }
 
 // ---------------- Network ----------------
-async function callApi(action, extra = {}) {
-  const payload = JSON.stringify({ secret: state.secret, action, ...extra });
+function envelopeEndpoint() {
+  if (state.envCfg && state.envCfg.url && state.envCfg.secret) return state.envCfg;
+  return { url: state.url, secret: state.secret };
+}
+
+async function callApiAt(target, action, extra = {}) {
+  const url = target && target.url ? target.url : "";
+  const secret = target && target.secret ? target.secret : "";
+  if (!url) throw new Error("URL Apps Script belum diisi.");
+  const payload = JSON.stringify({ secret, action, ...extra });
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS);
   let resp;
   try {
     // text/plain → hindari CORS preflight (Apps Script tidak menangani OPTIONS)
-    resp = await fetch(state.url, {
+    resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: payload,
@@ -340,6 +362,10 @@ async function callApi(action, extra = {}) {
     throw new Error(json.error || "Backend menolak permintaan.");
   }
   return json;
+}
+
+async function callApi(action, extra = {}) {
+  return callApiAt({ url: state.url, secret: state.secret }, action, extra);
 }
 
 function ensureOnline() {
@@ -375,22 +401,37 @@ const api = {
   debtDelete: (id) => callApi("debtDelete", { id }),
   debtPaymentUpsert: (p) => callApi("debtPaymentUpsert", { payment: p }),
   debtPaymentDelete: (id) => callApi("debtPaymentDelete", { id }),
+  envelopeUpsert: (e) => callApiAt(envelopeEndpoint(), "envelopeUpsert", { envelope: e }),
+  envelopeDelete: (id) => callApiAt(envelopeEndpoint(), "envelopeDelete", { id }),
 };
 
 // ---------------- Data ----------------
 async function loadDashboardData() {
-  const combined = await safe(() => callApi("dashboardData"), null);
-  if (combined) return combined;
+  const ep = envelopeEndpoint();
+  const usesCustomEnv = !!(ep.url && (ep.url !== state.url || ep.secret !== state.secret));
+  const fetchEnv = () => safe(() => callApiAt(ep, "envelopeList").then((r) => r.envelopes || []), []);
 
-  const [tx, budgets, goals, recurring, debts, debtPayments] = await Promise.all([
+  const combined = state.url ? await safe(() => callApi("dashboardData"), null) : null;
+  if (combined) {
+    if (usesCustomEnv) combined.envelopes = await fetchEnv();
+    else if (!Array.isArray(combined.envelopes)) combined.envelopes = await fetchEnv();
+    return combined;
+  }
+
+  if (!state.url) {
+    return { transactions: [], budgets: [], goals: [], recurring: [], debts: [], debtPayments: [], envelopes: await fetchEnv() };
+  }
+
+  const [tx, budgets, goals, recurring, debts, debtPayments, envelopes] = await Promise.all([
     callApi("list"),
     safe(() => callApi("budgetList").then((r) => r.budgets || []), []),
     safe(() => callApi("goalList").then((r) => r.goals || []), []),
     safe(() => callApi("recurringList").then((r) => r.recurring || []), []),
     safe(() => callApi("debtList").then((r) => r.debts || []), []),
     safe(() => callApi("debtPaymentList").then((r) => r.payments || []), []),
+    fetchEnv(),
   ]);
-  return { transactions: tx.transactions || [], budgets, goals, recurring, debts, debtPayments };
+  return { transactions: tx.transactions || [], budgets, goals, recurring, debts, debtPayments, envelopes };
 }
 
 async function safe(fn, fallback) {
@@ -446,6 +487,18 @@ function normalizeDebtPayment(p) {
   };
 }
 
+function normalizeEnvelope(e) {
+  return {
+    id: String(e.id ?? "").trim(),
+    personName: String(e.personName || "").trim(),
+    address: String(e.address || "").trim(),
+    amount: Number(e.amount) || 0,
+    tanggal: String(e.tanggal || todayIso()),
+    jam: String(e.jam || ""),
+    catatan: String(e.catatan || "").trim(),
+  };
+}
+
 function applyData(data) {
   state.transactions = (data.transactions || []).filter((t) => t && t.id).map(normalizeTx);
   state.budgets = (data.budgets || []).filter((b) => b && b.id);
@@ -453,14 +506,15 @@ function applyData(data) {
   state.recurring = (data.recurring || []).filter((r) => r && r.id);
   state.debts = (data.debts || []).filter((d) => d && d.id).map(normalizeDebt);
   state.debtPayments = (data.debtPayments || []).filter((p) => p && p.id && p.debtId).map(normalizeDebtPayment);
+  state.envelopes = (data.envelopes || []).filter((x) => x && x.id && x.personName).map(normalizeEnvelope);
 }
 
 function saveCache() {
   try {
     localStorage.setItem(LS_CACHE, JSON.stringify({
-      v: 2, at: Date.now(), url: state.url,
+      v: 2, at: Date.now(), url: state.url, envUrl: state.envCfg ? state.envCfg.url : "",
       transactions: state.transactions, budgets: state.budgets, goals: state.goals, recurring: state.recurring,
-      debts: state.debts, debtPayments: state.debtPayments,
+      debts: state.debts, debtPayments: state.debtPayments, envelopes: state.envelopes,
     }));
   } catch (e) { /* kuota penuh → abaikan, data tetap ada di memori */ }
 }
@@ -684,10 +738,12 @@ function render() {
 }
 
 function renderPage(page) {
+  applyReceptionModeUi();
   if (page === "home") renderHome();
   else if (page === "history") renderHistory();
   else if (page === "stats") renderStats();
   else if (page === "money") renderMoney();
+  else if (page === "envelopes") renderEnvelopes();
   else if (page === "settings") renderSettings();
   document.querySelectorAll("[data-month-label]").forEach((el) => { el.textContent = monthLabel(state.month); });
 }
@@ -1679,8 +1735,9 @@ function openStatsConfigSheet() {
   openSheet("Atur Tampilan Statistik ⚙️", "<div></div>", draw);
 }
 
-// ---------------- Money: hutang, budget, goal, berulang ----------------
+// ---------------- Money: hutang, budget, goal, berulang, resepsi ----------------
 function renderMoney() {
+  renderMoneyEnvelopeSummary();
   renderDebts();
   renderBudgets();
   renderGoals();
@@ -2223,6 +2280,347 @@ function renderRecurring() {
   }).join("");
 }
 
+// ---------------- Amplop Resepsi (terpisah dari pencatat keuangan) ----------------
+function applyReceptionModeUi() {
+  const on = !!state.receptionMode;
+  document.body.dataset.reception = on ? "1" : "0";
+  const sideAddLabel = document.getElementById("sideAddLabel");
+  if (sideAddLabel) sideAddLabel.textContent = on ? "Catat Amplop" : "Catat Transaksi";
+  document.querySelectorAll(".side-link").forEach((b) => {
+    const t = b.dataset.tab;
+    const hide = on && (t === "home" || t === "history" || t === "stats" || t === "money");
+    b.classList.toggle("hidden", hide);
+  });
+  const quick = document.getElementById("sideQuickGroup");
+  if (quick) {
+    quick.querySelectorAll("[data-add]").forEach((b) => {
+      b.classList.toggle("hidden", on && b.dataset.add !== "envelope");
+    });
+  }
+  document.querySelectorAll(".bottom-nav .nav-tab").forEach((b) => {
+    const t = b.dataset.tab;
+    if (t === "envelopes") b.classList.toggle("hidden", !on);
+    else if (t === "home" || t === "stats" || t === "money") b.classList.toggle("hidden", on);
+  });
+  const fab = document.getElementById("fabAdd");
+  if (fab) fab.setAttribute("aria-label", on ? "Catat amplop" : "Tambah transaksi");
+}
+
+function renderMoneyEnvelopeSummary() {
+  const el = document.getElementById("moneyEnvelopeSummary");
+  if (!el) return;
+  const total = state.envelopes.reduce((a, x) => a + x.amount, 0);
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:12px;color:var(--muted);font-weight:700">Total Semua Amplop</div>
+        <div style="font-size:20px;font-weight:900;color:var(--income)">${esc(fmtRp(total))}</div>
+      </div>
+      <span class="badge badge-ok">👥 ${state.envelopes.length} pemberi</span>
+    </div>`;
+}
+
+function renderEnvelopes() {
+  const total = state.envelopes.reduce((a, x) => a + x.amount, 0);
+  const custom = !!(state.envCfg && state.envCfg.url && state.envCfg.secret);
+  const titleEl = document.getElementById("envModeTitle");
+  if (titleEl) titleEl.textContent = state.receptionMode ? "💌 Mode Resepsi" : "💌 Amplop Resepsi";
+  const totalEl = document.getElementById("envTotal");
+  if (totalEl) totalEl.textContent = fmtRp(total);
+  const countEl = document.getElementById("envCountBadge");
+  if (countEl) countEl.textContent = `👥 ${state.envelopes.length} pemberi`;
+  const srcEl = document.getElementById("envSourceBadge");
+  if (srcEl) srcEl.textContent = custom ? "Sheet Khusus Resepsi" : "Tab AmplopResepsi";
+
+  const hideBtn = document.getElementById("envHideBtn");
+  if (hideBtn) hideBtn.innerHTML = `<svg class="ico"><use href="#${state.hide ? "i-eye-off" : "i-eye"}"/></svg>`;
+
+  const q = (state.envSearch || "").trim().toLowerCase();
+  const sorted = state.envelopes.slice().sort((a, b) => (b.tanggal + (b.jam || "")).localeCompare(a.tanggal + (a.jam || "")));
+  const filtered = q
+    ? sorted.filter((e) => [e.personName, e.address, e.catatan].join(" ").toLowerCase().includes(q))
+    : sorted;
+
+  const metaEl = document.getElementById("envSearchMeta");
+  if (metaEl) {
+    if (q) {
+      const fSum = filtered.reduce((a, x) => a + x.amount, 0);
+      metaEl.classList.remove("hidden");
+      metaEl.textContent = `Ditemukan ${filtered.length} hasil • Total ${fmtRp(fSum)}`;
+    } else {
+      metaEl.classList.add("hidden");
+    }
+  }
+
+  const listEl = document.getElementById("envList");
+  if (!listEl) return;
+  if (filtered.length === 0) {
+    listEl.innerHTML = emptyState(
+      q ? "🔍" : "💌",
+      q ? "Nama atau alamat tidak ditemukan." : "Belum ada catatan amplop resepsi.",
+      !q ? `<br><button class="btn btn-primary btn-sm" type="button" data-add="envelope">Catat Amplop Pertama</button>` : ""
+    );
+    return;
+  }
+
+  listEl.innerHTML = filtered.map((e) => {
+    const initial = (e.personName || "✉").trim().charAt(0).toUpperCase() || "✉";
+    return `
+      <button type="button" class="env-card" data-env-id="${esc(e.id)}">
+        <span class="env-avatar" aria-hidden="true">${esc(initial)}</span>
+        <span class="env-meta">
+          <b>${esc(e.personName)}</b>
+          ${e.address ? `<small>📍 ${esc(e.address)}</small>` : ""}
+          <small>${esc(dateLabel(e.tanggal, true))}${e.jam ? " · " + esc(e.jam.slice(0, 5)) : ""}${e.catatan ? " · " + esc(e.catatan) : ""}</small>
+        </span>
+        <span class="env-amt">${esc(fmtRp(e.amount))}</span>
+      </button>`;
+  }).join("");
+}
+
+function openEnvelopeDetail(item) {
+  if (!item) return;
+  const rows = [
+    ["Nama", esc(item.personName)],
+    ["Alamat", esc(item.address || "-")],
+    ["Waktu Catat", esc(dateLabel(item.tanggal, true) + (item.jam ? " · " + item.jam.slice(0, 5) : ""))],
+    item.catatan ? ["Catatan", esc(item.catatan)] : null,
+  ].filter(Boolean);
+  const html = `
+    <div class="tx-detail-hero">
+      <div class="tx-detail-ico" style="--c:#059669;--cbg:#D1FAE5" aria-hidden="true">💌</div>
+      <div class="tx-detail-amt amt-in">${esc(fmtRp(item.amount))}</div>
+      <div class="tx-detail-title">${esc(item.personName)}</div>
+    </div>
+    <div class="tx-detail-list">
+      ${rows.map(([k, v]) => `<div class="tx-detail-row"><span>${k}</span><b>${v}</b></div>`).join("")}
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn btn-danger-soft" id="envDetDel"><svg class="ico"><use href="#i-trash"/></svg>Hapus</button>
+      <button type="button" class="btn btn-ghost" data-sheet-close>Tutup</button>
+      <button type="button" class="btn btn-primary" id="envDetEdit"><svg class="ico"><use href="#i-edit"/></svg>Edit</button>
+    </div>`;
+  openSheet("Detail Amplop Resepsi 💌", html, (body) => {
+    body.querySelector("#envDetEdit").addEventListener("click", () => openEnvelopeForm(item));
+    body.querySelector("#envDetDel").addEventListener("click", async () => {
+      const ok = await askConfirm(`Hapus catatan amplop "${item.personName}" (${fmtRpRaw(item.amount)})?`);
+      if (!ok) return;
+      try {
+        await withBusy(body.querySelector("#envDetDel"), "...", async () => {
+          ensureOnline();
+          await api.envelopeDelete(item.id);
+        });
+        removeById(state.envelopes, item.id);
+        closeSheet();
+        toast("Catatan amplop dihapus 🗑️");
+        commitLocal();
+      } catch (err) { toast(err.message, "error"); }
+    });
+  });
+}
+
+function openEnvelopeForm(item = null) {
+  const isEdit = !!item;
+  const html = `
+    <form class="form" id="envForm" novalidate>
+      <label class="field"><span class="field-label">Nama Pemberi / Tamu</span>
+        <input id="eName" maxlength="100" placeholder="mis. Bpk. Ahmad &amp; Ibu Sari" value="${esc(item ? item.personName : "")}" required autofocus /></label>
+      <label class="field"><span class="field-label">Alamat / Daerah</span>
+        <input id="eAddr" maxlength="140" placeholder="mis. Jl. Melati No. 12 / Pasuruan" value="${esc(item ? item.address : "")}" /></label>
+      ${amountFieldHtml("eAmount", item ? item.amount : 0, "Nominal Amplop")}
+      <div class="row-2">
+        <label class="field"><span class="field-label">Tanggal</span><input type="date" id="eDate" value="${esc(item ? item.tanggal : todayIso())}" required /></label>
+        <label class="field"><span class="field-label">Catatan (opsional)</span><input id="eNote" maxlength="140" placeholder="mis. Teman kantor" value="${esc(item ? item.catatan : "")}" /></label>
+      </div>
+      <div class="form-error" role="alert"></div>
+      ${!isEdit ? `<button type="button" class="btn btn-soft btn-block" id="eSaveAnother" style="margin-bottom:8px">Simpan &amp; Tambah Lagi ✨</button>` : ""}
+      <div class="form-actions">
+        ${isEdit ? `<button type="button" class="btn btn-danger-soft" id="eDelete"><svg class="ico"><use href="#i-trash"/></svg>Hapus</button>` : ""}
+        <button type="submit" class="btn btn-primary" id="eSave">${isEdit ? "Simpan perubahan" : "Simpan 💌"}</button>
+      </div>
+    </form>`;
+
+  openSheet(isEdit ? "Edit Amplop Resepsi 💌" : "Catat Amplop Resepsi 💌", html, (body) => {
+    const form = body.querySelector("#envForm");
+    const amtEl = body.querySelector("#eAmount");
+    setupAmountInput(amtEl);
+
+    const doSave = async (keepAdding) => {
+      setFormError(form, "");
+      const personName = body.querySelector("#eName").value.trim();
+      const address = body.querySelector("#eAddr").value.trim();
+      const amount = parseAmount(amtEl);
+      const tanggal = body.querySelector("#eDate").value || todayIso();
+      const catatan = body.querySelector("#eNote").value.trim();
+      if (!personName) return setFormError(form, "Nama pemberi wajib diisi.");
+      if (amount <= 0) return setFormError(form, "Nominal harus lebih dari 0.");
+
+      const payload = {
+        id: item ? item.id : uuid(),
+        personName,
+        address,
+        amount,
+        tanggal,
+        jam: item ? (item.jam || nowHms()) : nowHms(),
+        catatan,
+      };
+      const btn = keepAdding ? body.querySelector("#eSaveAnother") : body.querySelector("#eSave");
+      try {
+        await withBusy(btn, "Menyimpan...", async () => {
+          ensureOnline();
+          await api.envelopeUpsert(payload);
+        });
+        upsertById(state.envelopes, normalizeEnvelope(payload));
+        commitLocal();
+        toast(`Amplop ${personName} tersimpan 💌`);
+        if (keepAdding && !isEdit) {
+          body.querySelector("#eName").value = "";
+          body.querySelector("#eAddr").value = "";
+          amtEl.value = "";
+          body.querySelector("#eNote").value = "";
+          body.querySelector("#eName").focus();
+        } else {
+          closeSheet();
+        }
+      } catch (err) { setFormError(form, err.message); }
+    };
+
+    form.addEventListener("submit", (e) => { e.preventDefault(); doSave(false); });
+    const anotherBtn = body.querySelector("#eSaveAnother");
+    if (anotherBtn) anotherBtn.addEventListener("click", () => doSave(true));
+
+    if (isEdit) {
+      body.querySelector("#eDelete").addEventListener("click", async () => {
+        const ok = await askConfirm(`Hapus catatan amplop "${item.personName}"?`);
+        if (!ok) return;
+        try {
+          await withBusy(body.querySelector("#eDelete"), "...", async () => {
+            ensureOnline();
+            await api.envelopeDelete(item.id);
+          });
+          removeById(state.envelopes, item.id);
+          closeSheet();
+          toast("Catatan amplop dihapus 🗑️");
+          commitLocal();
+        } catch (err) { setFormError(form, err.message); }
+      });
+    }
+  });
+}
+
+function downloadEnvelopesCsv() {
+  const rows = state.envelopes.slice().sort((a, b) => (b.tanggal + (b.jam || "")).localeCompare(a.tanggal + (a.jam || "")));
+  const total = rows.reduce((a, x) => a + x.amount, 0);
+  const lines = [
+    ["Rekap Amplop Resepsi - Catalyst"],
+    ["Total Pemberi", rows.length],
+    ["Total Nominal", fmtRpRaw(total)],
+    [],
+    ["No", "Nama", "Alamat", "Nominal", "Tanggal", "Jam", "Catatan"],
+    ...rows.map((e, i) => [i + 1, e.personName, e.address, Math.round(e.amount), e.tanggal, (e.jam || "").slice(0, 5), e.catatan]),
+  ];
+  const csv = lines.map((row) => row.map(csvCell).join(";")).join("\n");
+  downloadBlob("catalyst-amplop-resepsi.csv", "\ufeff" + csv, "text/csv;charset=utf-8");
+  toast("CSV Amplop Resepsi diunduh 📊");
+}
+
+function downloadEnvelopesPdf() {
+  const lib = window.jspdf;
+  if (!lib || !lib.jsPDF) return toast("Library PDF belum termuat. Coba lagi saat online.", "error");
+  const doc = new lib.jsPDF({ unit: "mm", format: "a4" });
+  const rows = state.envelopes.slice().sort((a, b) => (b.tanggal + (b.jam || "")).localeCompare(a.tanggal + (a.jam || "")));
+  const total = rows.reduce((a, x) => a + x.amount, 0);
+  const m = 14;
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  let y = 44;
+
+  const drawHead = () => {
+    doc.setFillColor(214, 63, 134);
+    doc.rect(0, 0, pw, 34, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.text("Rekap Amplop Resepsi", m, 15);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`${rows.length} pemberi · Total ${fmtRpRaw(total)}`, m, 23);
+    doc.text("Catalyst", pw - m, 15, { align: "right" });
+    doc.setTextColor(61, 42, 63);
+  };
+  drawHead();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("No", m, y);
+  doc.text("Nama", m + 10, y);
+  doc.text("Alamat", m + 75, y);
+  doc.text("Nominal", pw - m, y, { align: "right" });
+  y += 6;
+  doc.setFont("helvetica", "normal");
+
+  rows.forEach((e, i) => {
+    if (y > ph - 18) { doc.addPage(); drawHead(); y = 44; }
+    doc.text(String(i + 1) + ".", m, y);
+    doc.text(String(e.personName || "").slice(0, 30), m + 10, y);
+    doc.text(String(e.address || "-").slice(0, 32), m + 75, y);
+    doc.text(fmtRpRaw(e.amount), pw - m, y, { align: "right" });
+    y += 6.5;
+  });
+  doc.save("catalyst-amplop-resepsi.pdf");
+  toast("PDF Amplop Resepsi diunduh 📄");
+}
+
+function openEnvelopeBackendModal() {
+  const cur = state.envCfg || { url: "", secret: "" };
+  const html = `
+    <form class="form" id="envCfgForm" novalidate>
+      <div class="form-note">💌 <span>Kosongkan kedua kolom kalau mau ikut link keuangan utama (tab <b>AmplopResepsi</b>). Isi link Apps Script ke-2 kalau mau Spreadsheet terpisah total.</span></div>
+      <label class="field"><span class="field-label">URL Web App Khusus Resepsi</span>
+        <input type="url" id="ecUrl" placeholder="https://script.google.com/macros/s/.../exec" value="${esc(cur.url)}" /></label>
+      <label class="field"><span class="field-label">Webhook Secret Resepsi</span>
+        <input type="password" id="ecSecret" placeholder="secret resepsi" value="${esc(cur.secret)}" /></label>
+      <div class="form-error" role="alert"></div>
+      <div class="form-actions">
+        ${cur.url ? `<button type="button" class="btn btn-ghost" id="ecClear">Pakai Link Utama</button>` : ""}
+        <button type="submit" class="btn btn-primary" id="ecSave">Simpan &amp; Muat Data</button>
+      </div>
+    </form>`;
+  openSheet("Backend Khusus Resepsi 🔗", html, (body) => {
+    const form = body.querySelector("#envCfgForm");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const url = body.querySelector("#ecUrl").value.trim().replace(/\s/g, "");
+      const secret = body.querySelector("#ecSecret").value.trim();
+      if (!url && !secret) {
+        state.envCfg = null;
+        localStorage.removeItem(LS_ENVELOPE_CFG);
+        closeSheet();
+        renderSettings();
+        return loadAll();
+      }
+      if (!url.startsWith("https://") || !url.includes("script.google.com")) {
+        return setFormError(form, "URL harus URL Web App Apps Script (https://script.google.com/.../exec).");
+      }
+      if (!secret) return setFormError(form, "Secret resepsi tidak boleh kosong.");
+      state.envCfg = { url, secret };
+      localStorage.setItem(LS_ENVELOPE_CFG, JSON.stringify(state.envCfg));
+      closeSheet();
+      toast("Link resepsi diperbarui 🔗");
+      renderSettings();
+      loadAll();
+    });
+    const clr = body.querySelector("#ecClear");
+    if (clr) clr.addEventListener("click", () => {
+      state.envCfg = null;
+      localStorage.removeItem(LS_ENVELOPE_CFG);
+      closeSheet();
+      toast("Kembali memakai link keuangan utama");
+      renderSettings();
+      loadAll();
+    });
+  });
+}
+
 // ---------------- Pengaturan ----------------
 function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
@@ -2253,8 +2651,30 @@ function renderSettings() {
   const tgSub = state.telegram
     ? "Memakai bot Telegram dari file konfigurasi."
     : "Memakai bot yang terdaftar di Apps Script (kalau sudah diaktifkan dari aplikasi HP).";
+  const customEnv = !!(state.envCfg && state.envCfg.url && state.envCfg.secret);
 
   el.innerHTML = `
+    <section class="card set-group">
+      <h3>💌 Mode Resepsi &amp; Amplop</h3>
+      <div class="switch-row">
+        <div class="switch-text">
+          <div class="switch-title">Aktifkan Mode Resepsi</div>
+          <div class="switch-sub">${state.receptionMode ? "Aktif — Halaman keuangan disembunyikan, langsung fokus pencatatan amplop." : "Mati — Nyalakan saat acara agar langsung masuk ke catatan amplop tamu."}</div>
+        </div>
+        <label class="switch"><input type="checkbox" data-setting="reception-mode" ${state.receptionMode ? "checked" : ""} aria-label="Mode Resepsi" /><span class="track"></span></label>
+      </div>
+      <div class="set-row">
+        <span class="set-ico"><svg class="ico"><use href="#i-gift"/></svg></span>
+        <div class="set-text"><div class="set-title">Daftar Amplop Resepsi</div><div class="set-sub">${state.envelopes.length} tamu · Total ${esc(fmtRpRaw(state.envelopes.reduce((a, x) => a + x.amount, 0)))}</div></div>
+        <button class="btn btn-soft btn-sm" type="button" data-goto="envelopes">Buka</button>
+      </div>
+      <div class="set-row">
+        <span class="set-ico"><svg class="ico"><use href="#i-wallet"/></svg></span>
+        <div class="set-text"><div class="set-title">Backend Khusus Resepsi</div><div class="set-sub">${customEnv ? "Terpisah: " + esc(maskUrl(state.envCfg.url)) : "Mengikuti Apps Script keuangan utama"}</div></div>
+        <button class="btn btn-soft btn-sm" type="button" data-action="env-backend">Atur</button>
+      </div>
+    </section>
+
     <section class="card set-group">
       <h3>🎨 Tampilan</h3>
       <p class="set-desc">Tema lucu &amp; lembut, bisa terang atau gelap.</p>
@@ -2264,7 +2684,7 @@ function renderSettings() {
         <button class="seg-btn ${state.theme === "dark" ? "active" : ""}" type="button" data-theme-pick="dark">🌙 Gelap</button>
       </div>
       <div class="switch-row">
-        <div class="switch-text"><div class="switch-title">Sembunyikan saldo</div><div class="switch-sub">Nominal diganti ••• di semua halaman.</div></div>
+        <div class="switch-text"><div class="switch-title">Sembunyikan nominal</div><div class="switch-sub">Nominal diganti ••• di semua halaman.</div></div>
         <label class="switch"><input type="checkbox" data-setting="hide" ${state.hide ? "checked" : ""} aria-label="Sembunyikan saldo" /><span class="track"></span></label>
       </div>
     </section>
@@ -2297,6 +2717,7 @@ function renderSettings() {
       </div>
     </section>
 
+    ${!state.receptionMode ? `
     <section class="card set-group">
       <h3>📄 Laporan Bulanan</h3>
       <p class="set-desc">Unduh ringkasan &amp; daftar transaksi bulan ${esc(monthLabel(state.month))}.</p>
@@ -2305,13 +2726,13 @@ function renderSettings() {
         <button class="btn btn-soft btn-sm" type="button" data-download="csv">📊 CSV</button>
         <button class="btn btn-ghost btn-sm" type="button" data-goto="history">Pilih bulan lain</button>
       </div>
-    </section>
+    </section>` : ""}
 
     <section class="card set-group">
       <h3>🔗 Koneksi</h3>
       <div class="set-row">
         <span class="set-ico"><svg class="ico"><use href="#i-wallet"/></svg></span>
-        <div class="set-text"><div class="set-title">Apps Script Web App</div><div class="set-sub">${esc(maskUrl(state.url))}</div></div>
+        <div class="set-text"><div class="set-title">Apps Script Web App</div><div class="set-sub">${esc(maskUrl(state.url || (customEnv ? state.envCfg.url : "")))}</div></div>
       </div>
       <div class="set-row">
         <span class="set-ico"><svg class="ico"><use href="#i-logout"/></svg></span>
@@ -2467,12 +2888,14 @@ function merchantDatalist() {
 
 // ---------------- Menu tambah (FAB) & Suara AI ----------------
 function openAddMenu() {
+  if (state.receptionMode) return openEnvelopeForm();
   openSheet("Tambah apa hari ini? ✨", `
     <div class="action-list">
       <button class="action-row" type="button" data-add="voice"><span class="emo" style="--cbg:#D1FAE5" aria-hidden="true">🎙️</span><div><b>Catat Suara AI / Cepat</b><span>Bicara atau ketik kalimat transaksi otomatis</span></div></button>
       <button class="action-row" type="button" data-add="Pengeluaran"><span class="emo" style="--cbg:#FFE4E6" aria-hidden="true">🛍️</span><div><b>Catat Pengeluaran</b><span>Belanja, makan, tagihan, dll.</span></div></button>
       <button class="action-row" type="button" data-add="Pemasukan"><span class="emo" style="--cbg:#D1FAE5" aria-hidden="true">💰</span><div><b>Catat Pemasukan</b><span>Gaji, bonus, uang masuk lainnya</span></div></button>
       <button class="action-row" type="button" data-add="transfer"><span class="emo" style="--cbg:#EFE4FF" aria-hidden="true">🔁</span><div><b>Pindah Saldo</b><span>Transfer antar akun / dompet</span></div></button>
+      <button class="action-row" type="button" data-add="envelope"><span class="emo" style="--cbg:#FCE7F3" aria-hidden="true">💌</span><div><b>Catat Amplop Resepsi</b><span>Buku tamu, nama, alamat &amp; nominal amplop</span></div></button>
     </div>
     <p class="sheet-foot-note">📷 Scan struk kamera &amp; Gemini AI tersedia lengkap di aplikasi Android.</p>`);
 }
@@ -3665,29 +4088,37 @@ function updateFullscreenBtn() {
 function handleKeyboardShortcut(e) {
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   if (sheetOpen || !document.getElementById("confirm").classList.contains("hidden")) return;
-  if (!state.url || document.getElementById("app").classList.contains("hidden")) return;
+  if ((!state.url && !(state.envCfg && state.envCfg.url)) || document.getElementById("app").classList.contains("hidden")) return;
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   const k = e.key.toLowerCase();
-  const pages = ["home", "history", "stats", "money", "settings"];
+  const pages = state.receptionMode ? ["envelopes", "settings"] : ["home", "history", "stats", "money", "envelopes", "settings"];
   if (k === "n") { e.preventDefault(); openAddMenu(); }
   else if (k === "r") { e.preventDefault(); loadAll(); }
   else if (k === "f") { e.preventDefault(); toggleFullscreen(); }
   else if (k === "/") {
     e.preventDefault();
-    if (state.page !== "home" && state.page !== "history") goTo("history");
-    setTimeout(() => {
-      const input = document.getElementById(state.page === "home" ? "homeSearch" : "histSearch");
-      if (input) input.focus();
-    }, 60);
-  } else if (/^[1-5]$/.test(k)) { e.preventDefault(); goTo(pages[Number(k) - 1]); }
+    if (state.receptionMode || state.page === "envelopes") {
+      if (state.page !== "envelopes") goTo("envelopes");
+      setTimeout(() => {
+        const input = document.getElementById("envSearch");
+        if (input) input.focus();
+      }, 60);
+    } else {
+      if (state.page !== "home" && state.page !== "history") goTo("history");
+      setTimeout(() => {
+        const input = document.getElementById(state.page === "home" ? "homeSearch" : "histSearch");
+        if (input) input.focus();
+      }, 60);
+    }
+  } else if (/^[1-6]$/.test(k) && pages[Number(k) - 1]) { e.preventDefault(); goTo(pages[Number(k) - 1]); }
 }
 function updateOnline() {
   document.getElementById("offlineBar").classList.toggle("hidden", navigator.onLine !== false);
 }
 
 // ---------------- Koneksi / setup ----------------
-function connect(url, secret, telegram = null) {
+function connect(url, secret, telegram = null, envCfg = undefined, receptionMode = undefined) {
   const cleanUrl = (url || "").trim().replace(/\s/g, "");
   const cleanSecret = (secret || "").trim();
   if (!cleanUrl.startsWith("https://") || !cleanUrl.includes("script.google.com")) {
@@ -3698,6 +4129,19 @@ function connect(url, secret, telegram = null) {
   state.secret = cleanSecret;
   state.telegram = telegram;
   localStorage.setItem(LS_KEY, JSON.stringify({ url: state.url, secret: state.secret, telegram: state.telegram }));
+  if (envCfg !== undefined) {
+    if (envCfg && envCfg.url && envCfg.secret) {
+      state.envCfg = envCfg;
+      localStorage.setItem(LS_ENVELOPE_CFG, JSON.stringify(envCfg));
+    } else if (envCfg === null) {
+      state.envCfg = null;
+      localStorage.removeItem(LS_ENVELOPE_CFG);
+    }
+  }
+  if (receptionMode !== undefined) {
+    state.receptionMode = !!receptionMode;
+    localStorage.setItem(LS_RECEPTION_MODE, state.receptionMode ? "1" : "0");
+  }
   state.loadedAt = 0;
   showApp();
   loadAll();
@@ -3706,7 +4150,9 @@ function connect(url, secret, telegram = null) {
 function disconnect() {
   localStorage.removeItem(LS_KEY);
   localStorage.removeItem(LS_CACHE);
-  Object.assign(state, { url: "", secret: "", telegram: null, transactions: [], budgets: [], goals: [], recurring: [], debts: [], debtPayments: [], loadedAt: 0 });
+  localStorage.removeItem(LS_ENVELOPE_CFG);
+  localStorage.removeItem(LS_RECEPTION_MODE);
+  Object.assign(state, { url: "", secret: "", telegram: null, envCfg: null, receptionMode: false, transactions: [], envelopes: [], envSearch: "", budgets: [], goals: [], recurring: [], debts: [], debtPayments: [], loadedAt: 0 });
   showSetup();
   setupMsg("Koneksi diputus. Data di browser ini sudah dihapus.", false);
 }
@@ -3720,6 +4166,7 @@ function setupMsg(msg, err) {
 function showApp() {
   document.getElementById("setup").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
+  applyReceptionModeUi();
   goTo(pageFromHash(), { replace: true });
 }
 function showSetup() {
@@ -3736,7 +4183,17 @@ function parseConfig(text) {
   if (!url) return null;
   const token = String(obj.telegramToken || "").trim();
   const chatId = String(obj.telegramChatId || "").trim();
-  return { url, secret, telegram: token && chatId ? { token, chatId } : null };
+  const envUrl = String(obj.envelopeWebhookUrl || obj.envelopeUrl || "").trim();
+  const envSecret = String(obj.envelopeWebhookSecret || obj.envelopeSecret || "").trim();
+  const hasReception = obj.receptionModeEnabled !== undefined || obj.receptionMode !== undefined;
+  const receptionMode = hasReception ? !!(obj.receptionModeEnabled ?? obj.receptionMode) : undefined;
+  return {
+    url,
+    secret,
+    telegram: token && chatId ? { token, chatId } : null,
+    envCfg: envUrl && envSecret ? { url: envUrl, secret: envSecret } : undefined,
+    receptionMode,
+  };
 }
 
 function handleFile(file) {
@@ -3745,19 +4202,27 @@ function handleFile(file) {
   reader.onload = () => {
     const cfg = parseConfig(reader.result);
     if (!cfg) return setupMsg("File config tidak valid.", true);
-    connect(cfg.url, cfg.secret, cfg.telegram);
+    const recEl = document.getElementById("setupReceptionMode");
+    const rec = cfg.receptionMode !== undefined ? cfg.receptionMode : (recEl ? recEl.checked : undefined);
+    connect(cfg.url, cfg.secret, cfg.telegram, cfg.envCfg, rec);
   };
   reader.readAsText(file);
 }
 
 // ---------------- Navigasi ----------------
-const PAGES = ["home", "history", "stats", "money", "settings"];
+const PAGES = ["home", "history", "stats", "money", "envelopes", "settings"];
+function defaultPage() {
+  return state.receptionMode ? "envelopes" : "home";
+}
+function isPageAllowed(page) {
+  return state.receptionMode ? (page === "envelopes" || page === "settings") : PAGES.includes(page);
+}
 function pageFromHash() {
   const h = (location.hash || "").replace("#", "");
-  return PAGES.includes(h) ? h : "home";
+  return isPageAllowed(h) ? h : defaultPage();
 }
 function goTo(page, { replace = false } = {}) {
-  if (!PAGES.includes(page)) page = "home";
+  if (!isPageAllowed(page)) page = defaultPage();
   if (location.hash.replace("#", "") !== page) {
     if (!replace) {
       location.hash = page; // → hashchange → showPage (tombol Back HP/browser ikut berfungsi)
@@ -3770,12 +4235,12 @@ function goTo(page, { replace = false } = {}) {
 function showPage(page) {
   state.page = page;
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("hidden", p.dataset.page !== page));
-  const tab = page === "history" ? "home" : page;
+  const tab = page === "history" ? "home" : (page === "envelopes" && !state.receptionMode ? "money" : page);
   document.querySelectorAll(".nav-tab").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tab);
     if (b.dataset.tab === tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
-  // Sidebar PC punya menu Riwayat sendiri, jadi cocokkan persis dengan halaman
+  // Sidebar PC punya menu Riwayat & Resepsi sendiri, jadi cocokkan persis dengan halaman
   document.querySelectorAll(".side-link").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === page);
     if (b.dataset.tab === page) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
@@ -3799,6 +4264,7 @@ function handleShortcut() {
   else if (aksi === "keluar") openTxForm({ tipe: "Pengeluaran" });
   else if (aksi === "masuk") openTxForm({ tipe: "Pemasukan" });
   else if (aksi === "transfer") openTransferForm();
+  else if (aksi === "amplop") openEnvelopeForm();
 }
 
 // ---------------- Event (delegasi) ----------------
@@ -3823,10 +4289,13 @@ function bindEvents() {
   document.getElementById("pasteBtn").addEventListener("click", () => {
     const cfg = parseConfig(document.getElementById("pasteArea").value);
     if (!cfg) return setupMsg("JSON tidak valid / tidak ada webhookUrl.", true);
-    connect(cfg.url, cfg.secret, cfg.telegram);
+    const recEl = document.getElementById("setupReceptionMode");
+    const rec = cfg.receptionMode !== undefined ? cfg.receptionMode : (recEl ? recEl.checked : undefined);
+    connect(cfg.url, cfg.secret, cfg.telegram, cfg.envCfg, rec);
   });
   document.getElementById("manualBtn").addEventListener("click", () => {
-    connect(document.getElementById("manualUrl").value, document.getElementById("manualSecret").value);
+    const recEl = document.getElementById("setupReceptionMode");
+    connect(document.getElementById("manualUrl").value, document.getElementById("manualSecret").value, null, undefined, recEl ? recEl.checked : undefined);
   });
 
   // Header & navigasi
@@ -3845,21 +4314,26 @@ function bindEvents() {
   });
   document.getElementById("homeSearch").addEventListener("input", (e) => { state.home.q = e.target.value; renderHome(); });
   document.getElementById("histSearch").addEventListener("input", (e) => { state.hist.q = e.target.value; renderHistory(); });
+  const envSearchEl = document.getElementById("envSearch");
+  if (envSearchEl) envSearchEl.addEventListener("input", (e) => { state.envSearch = e.target.value; renderEnvelopes(); });
 
   document.addEventListener("click", (e) => {
     const target = e.target;
     if (!target.closest("#downloadMenu") && !target.closest("#downloadBtn")) {
       document.getElementById("downloadMenu").classList.add("hidden");
     }
-    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-debt-del],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-stats-tab],[data-chart-type],[data-cat-kind],[data-heat-day],[data-add]");
+    const el = target.closest("[data-tab],[data-goto],[data-tx],[data-env-id],[data-env-export],[data-open-wallet],[data-debt-tab],[data-debt-filter],[data-debt-pay],[data-debt-history],[data-debt-edit],[data-debt-del],[data-filter-kind],[data-month],[data-budget-month],[data-budget],[data-goal-edit],[data-goal-tabung],[data-recurring],[data-download],[data-theme-pick],[data-action],[data-sheet-close],[data-gran],[data-stats-tab],[data-chart-type],[data-cat-kind],[data-heat-day],[data-add]");
     if (!el) return;
     const d = el.dataset;
     if (d.sheetClose !== undefined) return closeSheet();
     if (d.add) {
       if (d.add === "voice") return openVoiceForm();
       if (d.add === "transfer") return openTransferForm();
+      if (d.add === "envelope") return openEnvelopeForm();
       return openTxForm({ tipe: d.add });
     }
+    if (d.envId) { const env = state.envelopes.find((x) => x.id === d.envId); return env && openEnvelopeDetail(env); }
+    if (d.envExport) return d.envExport === "pdf" ? downloadEnvelopesPdf() : downloadEnvelopesCsv();
     if (d.openWallet !== undefined) return openWalletSheet(d.openWallet);
     if (d.debtTab) { state.debtTab = d.debtTab; return renderDebts(); }
     if (d.debtFilter) { state.debtFilter = d.debtFilter; return renderDebts(); }
@@ -3894,10 +4368,12 @@ function bindEvents() {
     if (d.heatDay) { state.statsSelectedDay = state.statsSelectedDay === d.heatDay ? null : d.heatDay; return renderStatsHeatmap(); }
     switch (d.action) {
       case "add": return openAddMenu();
+      case "add-envelope": return openEnvelopeForm();
       case "add-debt": return openDebtForm(null, state.debtTab);
       case "add-budget": return openBudgetForm();
       case "add-goal": return openGoalForm();
       case "add-recurring": return openRecurringForm();
+      case "env-backend": return openEnvelopeBackendModal();
       case "copy-budgets": return copyBudgetsFromPrevMonth();
       case "install": return promptInstall();
       case "dismiss-install":
@@ -3929,7 +4405,7 @@ function bindEvents() {
   });
   document.addEventListener("fullscreenchange", updateFullscreenBtn);
   // Pindah antara tampilan HP ↔ PC (mis. jendela diperbesar) → gambar ulang tata letak
-  const onLayoutChange = () => { if (state.url) render(); };
+  const onLayoutChange = () => { if (state.url || (state.envCfg && state.envCfg.url)) render(); };
   if (desktopQuery.addEventListener) desktopQuery.addEventListener("change", onLayoutChange);
   else if (desktopQuery.addListener) desktopQuery.addListener(onLayoutChange);
 
@@ -3945,6 +4421,14 @@ function bindEvents() {
       state.notify = t.checked;
       localStorage.setItem(LS_NOTIFY, state.notify ? "1" : "0");
       return toast(state.notify ? "Notifikasi Telegram aktif 🔔" : "Notifikasi Telegram dimatikan 🔕");
+    }
+    if (t.dataset && t.dataset.setting === "reception-mode") {
+      state.receptionMode = t.checked;
+      localStorage.setItem(LS_RECEPTION_MODE, state.receptionMode ? "1" : "0");
+      applyReceptionModeUi();
+      renderSettings();
+      goTo(state.receptionMode ? "envelopes" : "home", { replace: true });
+      return toast(state.receptionMode ? "Mode Resepsi diaktifkan 💌" : "Mode Resepsi dimatikan");
     }
     return undefined;
   });
